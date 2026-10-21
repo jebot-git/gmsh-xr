@@ -4,6 +4,10 @@
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
 #include "GmshConfig.h"
+#if defined(HAVE_DOME_XR)
+#include "domeXr.h"
+#include "domeDesktop.h"
+#endif
 #include <sstream>
 #include <string.h>
 #include <FL/Fl.H>
@@ -373,6 +377,9 @@ static void gamepad_handler(void *data)
 
 void FlGui::applyColorScheme(bool redraw)
 {
+#if defined(HAVE_DOME_XR)
+  if(domeDesktop::active()) { domeDesktop::appearance(); return; }
+#endif
   static int first = true;
   int N = 4 + FL_NUM_GRAY;
   static std::vector<unsigned char> r(N, 0), g(N, 0), b(N, 0);
@@ -512,6 +519,9 @@ FlGui::FlGui(int argc, char **argv, bool quitShouldExit,
   // handle themes and tooltip options
   if(CTX::instance()->guiTheme.size())
     Fl::scheme(CTX::instance()->guiTheme.c_str());
+#if defined(HAVE_DOME_XR)
+  domeDesktop::init();
+#endif
   Fl_Tooltip::size(FL_NORMAL_SIZE);
 
   // use retina resolution if available
@@ -693,6 +703,10 @@ FlGui *FlGui::instance(int argc, char **argv, bool quitShouldExit,
 void FlGui::destroy()
 {
   if(!_instance) return;
+#if defined(HAVE_DOME_XR)
+  domeXr::shutdown();
+  domeDesktop::shutdown();
+#endif
 
   _instance->onelabContext->disableRedraw();
 
@@ -719,6 +733,9 @@ int FlGui::run(const std::string &optionFileName)
 
   // draw the scene
   drawContext::global()->draw(false);
+#if defined(HAVE_DOME_XR)
+  domeXr::start();
+#endif
 
 #if defined(HAVE_TOUCHBAR)
   updateTouchBar();

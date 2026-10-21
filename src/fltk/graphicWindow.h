@@ -48,6 +48,7 @@ public:
   graphicWindow(bool main = true, int numTiles = 1, bool detachedMenu = false);
   ~graphicWindow();
   Fl_Window *getWindow() { return _win; }
+  Fl_Menu_Bar *getMenuBar() { return _bar; }
   Fl_Window *getMenuWindow() { return _menuwin; }
   onelabGroup *getMenu() { return _onelab; }
   Fl_Progress *getProgress() { return _label; }

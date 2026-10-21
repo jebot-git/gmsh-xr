@@ -22,6 +22,9 @@ typedef unsigned long intptr_t;
 #include "optionWindow.h"
 #include "openglWindow.h"
 #include "Context.h"
+#if defined(HAVE_DOME_XR)
+#include "domeXr.h"
+#endif
 
 class drawContextFltk : public drawContextGlobal {
 public:
@@ -46,6 +49,9 @@ public:
         }
       }
     }
+#if defined(HAVE_DOME_XR)
+    domeXr::redraw();
+#endif
     FlGui::check(rateLimited);
   }
   void drawCurrentOpenglWindow(bool make_current)
@@ -54,6 +60,9 @@ public:
     openglWindow *gl = FlGui::instance()->getCurrentOpenglWindow();
     if(make_current) gl->make_current();
     gl->redraw();
+#if defined(HAVE_DOME_XR)
+    domeXr::redraw();
+#endif
     glFlush();
     FlGui::check();
   }

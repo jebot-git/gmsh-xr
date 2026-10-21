@@ -132,6 +132,9 @@ private:
 
 public:
   Camera camera;
+  // Local to the mesh-only DomeD view. Zero leaves ordinary Gmsh rendering intact.
+  int domeStereoEye = 0;
+  double domeStereoBaseline = 0.06;
   double r[3]; // current Euler angles (in degrees!)
   double t[3], s[3]; // current translation and scale
   double quaternion[4]; // current quaternion used for "trackball" rotation

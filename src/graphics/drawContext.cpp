@@ -9,6 +9,7 @@
 #include "GmshConfig.h"
 #include "GmshMessage.h"
 #include "drawContext.h"
+#include "DomeStereo.h"
 #include "Trackball.h"
 #include "Context.h"
 #include "Numeric.h"
@@ -603,6 +604,33 @@ void drawContext::initProjection(int xpick, int ypick, int wpick, int hpick)
   double zmax =
     std::max(fabs(CTX::instance()->min[2]), fabs(CTX::instance()->max[2]));
   if(zmax < CTX::instance()->lc) zmax = CTX::instance()->lc;
+
+  if(domeStereoEye) {
+    const double radius = std::max(CTX::instance()->lc, 1.e-12);
+    const bool cameraMode = CTX::instance()->camera;
+    if(cameraMode && !camera.on) camera.init();
+    const double distance = cameraMode ? std::max(camera.focallength, radius * .1) : 2.5 * radius;
+    const double nearPlane = cameraMode ? std::max(camera.glFnear, radius * 1.e-5) : radius * .01;
+    const double farPlane = std::max(100. * radius, distance * 10.);
+    const double eye = domeStereoEye * domeStereoBaseline * radius * .5;
+    const double aperture = cameraMode ? camera.aperture : 40.;
+    const double halfHeight = distance * tan(aperture * M_PI / 360.);
+    const auto f = domeStereo::frustum(1. / Va, nearPlane, farPlane, distance, halfHeight, eye);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glFrustum(f.left, f.right, f.bottom, f.top, f.nearPlane, f.farPlane);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    if(cameraMode) {
+      XYZ offset = eye * camera.right;
+      gluLookAt(camera.position.x + offset.x, camera.position.y + offset.y,
+                camera.position.z + offset.z, camera.target.x + offset.x,
+                camera.target.y + offset.y, camera.target.z + offset.z,
+                camera.up.x, camera.up.y, camera.up.z);
+    }
+    else glTranslated(-eye, 0., -distance);
+    return;
+  }
 
   if(CTX::instance()->camera) { // if we use the camera mode
     glDisable(GL_DEPTH_TEST);

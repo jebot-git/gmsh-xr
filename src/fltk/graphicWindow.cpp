@@ -4,6 +4,14 @@
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
 #include "GmshConfig.h"
+#if defined(HAVE_DOME_XR)
+#include <FL/Fl_Widget.H>
+#include <stdint.h>
+#include "domeXr.h"
+#include "domeDesktop.h"
+static void dome_separation_cb(Fl_Widget *, void *data) { domeXr::separation((intptr_t)data); }
+static void dome_xr_cb(Fl_Widget *, void *) { domeXr::toggle(); }
+#endif
 #include "GmshDefines.h"
 #include "GmshVersion.h"
 #if !defined(HAVE_NO_STDINT_H)
@@ -2917,6 +2925,15 @@ static Fl_Menu_Item bar_table[] = {
     {"M&essage Console", FL_CTRL+'l', (Fl_Callback *)show_hide_message_cb, nullptr},
     {nullptr},
   {"&Window", 0, nullptr, nullptr, FL_SUBMENU},
+#if defined(HAVE_DOME_XR)
+    {"DomeD XR Mesh", FL_CTRL+FL_SHIFT+'x', dome_xr_cb, nullptr},
+    {"XR Eye Separation", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER},
+      {"Increase", 0, dome_separation_cb, (void *)1},
+      {"Decrease", 0, dome_separation_cb, (void *)-1},
+      {"Zero Separation", 0, dome_separation_cb, (void *)0},
+      {"Default Separation", 0, dome_separation_cb, (void *)2},
+      {nullptr},
+#endif
     {"New Window", 0, (Fl_Callback *)file_window_cb, (void*)"new", FL_MENU_DIVIDER},
 #if defined(WIN32)
     {"Copy to Clipboard",  FL_CTRL+'c', (Fl_Callback *)file_window_cb, (void*)"copy", FL_MENU_DIVIDER},
@@ -2990,6 +3007,15 @@ static Fl_Menu_Item sysbar_table[] = {
     {"Message Console", FL_META+'l', (Fl_Callback *)show_hide_message_cb, nullptr},
     {nullptr},
   {"Window", 0, nullptr, nullptr, FL_SUBMENU},
+#if defined(HAVE_DOME_XR)
+    {"DomeD XR Mesh", FL_CTRL+FL_SHIFT+'x', dome_xr_cb, nullptr},
+    {"XR Eye Separation", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER},
+      {"Increase", 0, dome_separation_cb, (void *)1},
+      {"Decrease", 0, dome_separation_cb, (void *)-1},
+      {"Zero Separation", 0, dome_separation_cb, (void *)0},
+      {"Default Separation", 0, dome_separation_cb, (void *)2},
+      {nullptr},
+#endif
     {"New Window", 0, (Fl_Callback *)file_window_cb, (void*)"new", FL_MENU_DIVIDER},
     {"Split Horizontally", 0, (Fl_Callback *)file_window_cb, (void*)"split_h"},
     {"Split Vertically",   0, (Fl_Callback *)file_window_cb, (void*)"split_v"},
@@ -3924,6 +3950,9 @@ graphicWindow::graphicWindow(bool main, int numTiles, bool detachedMenu)
       _bar = new Fl_Menu_Bar(0, 0, width, BH);
       _bar->menu(bar_table);
       _bar->global();
+#if defined(HAVE_DOME_XR)
+      domeDesktop::attach(*_win, *_bar);
+#endif
       fillRecentHistoryMenu();
 #if defined(__APPLE__)
     }
@@ -4131,6 +4160,9 @@ graphicWindow::graphicWindow(bool main, int numTiles, bool detachedMenu)
 
 graphicWindow::~graphicWindow()
 {
+#if defined(HAVE_DOME_XR)
+  domeDesktop::detach(*_win);
+#endif
   openglWindow::setLastHandled(nullptr);
   _tile->clear();
   _win->clear();

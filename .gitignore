@@ -25,3 +25,7 @@ cmake-build-*
 # Python virtual environment
 venv/
 .venv/
+
+# Local rendering evidence and CMake-generated option documentation
+/artifacts/
+/cmake_options.texi

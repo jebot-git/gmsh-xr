@@ -32,5 +32,9 @@ set(SRC
     Navigator.cpp
 )
 
+if(ENABLE_DOME_XR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  list(APPEND SRC domeXr.cpp)
+endif()
+
 file(GLOB HDR RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.h)
 append_gmsh_src(src/fltk "${SRC};${HDR}")

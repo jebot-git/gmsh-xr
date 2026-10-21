@@ -9,6 +9,9 @@
 #include <iostream>
 #include <fstream>
 #include "GmshConfig.h"
+#if defined(HAVE_DOME_XR)
+#include "domeXr.h"
+#endif
 #include "GmshDefines.h"
 #include "GmshVersion.h"
 #include "GmshMessage.h"
@@ -175,6 +178,10 @@ std::vector<std::pair<std::string, std::string> > GetUsage()
   s.push_back(mp("-camera", "Use camera mode view (General.CameraMode)"));
   s.push_back(mp("-stereo", "OpenGL quad-buffered stereo rendering "
                  "(General.Stereo)"));
+#if defined(HAVE_DOME_XR)
+  s.push_back(mp("-dome-xr", "Open the live stereo mesh view in the caller's active DomeD XR session"));
+  s.push_back(mp("-dome-xr-capture file.ppm", "Capture the stereo mesh framebuffer for QA and exit (no headset required)"));
+#endif
   s.push_back(mp("-gamepad", "Use gamepad controller if available"));
 #endif
   s.push_back(mp("Other:", ""));
@@ -1432,6 +1439,20 @@ static bool GetOtherOption(const std::vector<std::string> &argv,
     opt_general_camera_mode(0, GMSH_SET, 1.);
     i++;
   }
+#if defined(HAVE_DOME_XR)
+  else if(argv[i] == "-dome-xr") {
+    domeXr::requested = true;
+    i++;
+  }
+  else if(argv[i] == "-dome-xr-capture") {
+    i++;
+    if(i < argv.size()) domeXr::capture = argv[i++];
+    else {
+      Msg::Error("Missing stereo capture filename");
+      if(exitOnError) Msg::Exit(1);
+    }
+  }
+#endif
   else if(argv[i] == "-stereo") {
     opt_general_stereo_mode(0, GMSH_SET, 1.);
     i++;

@@ -4,6 +4,9 @@
 # Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
 cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
+if(POLICY CMP0069)
+  cmake_policy(SET CMP0069 NEW)
+endif()
 
 # if CMAKE_BUILD_TYPE is specified use it; otherwise set the default
 # build type to "RelWithDebInfo" ("-O2 -g" with gcc) prior to calling
@@ -50,6 +53,7 @@ opt(DINTEGRATION "Enable discrete integration (needed for levelsets)" ${DEFAULT}
 opt(DOMHEX "Enable experimental DOMHEX code" ${DEFAULT})
 opt(EIGEN "Enable Eigen for linear algebra (instead of Blas/Lapack)" ON)
 opt(FLTK "Enable FLTK graphical user interface (requires mesh/post)" ${DEFAULT})
+opt(DOME_XR "Enable native FLTK stereo mesh presentation in DomeD (Linux)" ON)
 opt(GEOMETRYCENTRAL "Enable geometry-central library (experimental)" ${DEFAULT})
 opt(GETDP "Enable GetDP solver (linked as a library, experimental)" ${DEFAULT})
 opt(GMM "Enable GMM linear solvers (simple alternative to PETSc)" ${DEFAULT})
@@ -664,6 +668,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/fltk AND ENABLE_FLTK)
       endif()
     endif()
   endif()
+endif()
+
+if(HAVE_FLTK AND ENABLE_DOME_XR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(DOME_XR_DEPS REQUIRED IMPORTED_TARGET libcurl cairo)
+  find_package(nlohmann_json 3.2 REQUIRED)
+  list(APPEND EXTERNAL_INCLUDES ${DOME_XR_DEPS_INCLUDE_DIRS})
+  list(APPEND EXTERNAL_LIBRARIES PkgConfig::DOME_XR_DEPS nlohmann_json::nlohmann_json)
+  pkg_check_modules(DOME_DESKTOP REQUIRED IMPORTED_TARGET fontconfig)
+  include(src/fltk/domexr/desktop-menu.cmake)
+  add_library(gmsh-domed-desktop STATIC src/fltk/domexr/domeDesktop.cpp)
+  set_target_properties(gmsh-domed-desktop PROPERTIES CXX_STANDARD 17)
+  target_include_directories(gmsh-domed-desktop PRIVATE ${FLTK_INCLUDE_DIR} ${DOME_XR_DEPS_INCLUDE_DIRS})
+  target_link_libraries(gmsh-domed-desktop PRIVATE ${FLTK_LIBRARIES} PkgConfig::DOME_DESKTOP nlohmann_json::nlohmann_json)
+  de_xr_desktop_menu(gmsh-domed-desktop)
+  list(APPEND EXTERNAL_LIBRARIES gmsh-domed-desktop)
+  add_definitions(-DHAVE_DOME_XR)
 endif()
 
 if(APPLE AND HAVE_FLTK AND ENABLE_TOUCHBAR)
@@ -2284,6 +2305,11 @@ endmacro()
 if(ENABLE_TESTS AND NOT DISABLE_GMSH_TESTS)
   # disabling tests is useful when including this CMakeLists in an external project
   include(CTest)
+  if(ENABLE_DOME_XR AND HAVE_FLTK AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(dome-stereo-test tests/dome-stereo.cpp)
+    target_include_directories(dome-stereo-test PRIVATE src/graphics)
+    add_test(NAME dome-stereo COMMAND dome-stereo-test)
+  endif()
   file(GLOB_RECURSE ALLFILES
        tutorials/*.geo examples/*.geo benchmarks/?d/*.geo benchmarks/extrude/*.geo
        benchmarks/occ/*.geo)
