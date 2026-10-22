@@ -94,6 +94,41 @@ specify the font size for the GUI.
 .B \-display string
 specify display.
 .\" ********************************************************************
+.SH DOMED XR DISPLAY OPTIONS
+These fork-specific options are available only when built with
+ENABLE_DOME_XR and FLTK on Linux.
+.TP 4
+.B \-dome-xr
+Open the current model in the live stereo mesh view in the caller's active
+DomeD XR session. This requires Gmsh's native Wayland backend, the matching
+DomeD Gmsh integration endpoint and an already active XR session.
+Gmsh does not start a compositor or a separate XR runtime.
+.TP 4
+.BI \-dome-xr-capture " file.ppm"
+Write the stereo framebuffer to a PPM file and exit. This QA mode bypasses
+the active XR session check and requires no headset, but still requires a
+working graphical/OpenGL environment; it is not headless rendering.
+.PP
+In the GUI, Window -> DomeD XR Mesh (Ctrl+Shift+X) toggles the same view.
+Left-drag rotates, Shift+left-drag or another drag pans, the mouse wheel zooms,
+and Escape closes the stereo window. Window -> XR Eye Separation adjusts or
+resets the separation. Gmsh's normal shortcuts remain available.
+.PP
+The native FLTK menu is exported to DomeD's universal menu. Appearance follows
+$XDG_CONFIG_HOME/dome/appearance.json, using the shared de-xr appearance bridge.
+The default configuration root is $HOME/.config when XDG_CONFIG_HOME is unset.
+.PP
+The Wayland session is discovered through WAYLAND_DISPLAY and XDG_RUNTIME_DIR;
+launch Gmsh from the intended DomeD session rather than copying another
+session's environment variables.
+.PP
+Examples:
+.nf
+  gmsh tutorials/t1.geo -dome-xr
+  gmsh tutorials/t1.geo -dome-xr-capture /tmp/gmsh-stereo.ppm
+.fi
+The example file paths are relative to a Gmsh source checkout.
+.\" ********************************************************************
 .SH OTHER OPTIONS
 .TP 4
 .B \-
