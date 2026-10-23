@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -16,10 +16,7 @@
 #include "MLine.h"
 #include "MTriangle.h"
 
-#if defined(HAVE_ANN)
-#include "ANN/ANN.h"
-class ANNkd_tree;
-#endif
+#include "SPoint3KDTree.h"
 
 class GEntity;
 class GModel;
@@ -55,15 +52,9 @@ class backgroundMesh : public simpleFunction<double> {
   static std::vector<backgroundMesh *> _current;
   backgroundMesh(GFace *, bool dist = false);
   ~backgroundMesh();
-#if defined(HAVE_ANN)
-  mutable ANNkd_tree *uv_kdtree;
-  mutable ANNpointArray nodes;
-  ANNidxArray index;
-  ANNdistArray dist;
-  mutable ANNpointArray angle_nodes;
-  mutable ANNkd_tree *angle_kdtree;
+  // boundary nodes and cross field samples in the parametric plane
+  SPoint3Search _uvSearch, _angleSearch;
   std::vector<double> _cos, _sin;
-#endif
 public:
   static void set(GFace *);
   static void setCrossFieldsByDistance(GFace *);
@@ -136,11 +127,9 @@ struct BackgroundMeshGFace {
   std::vector<MTriangle> triangles;
 };
 
-/* @brief Store a collection of GEntity background meshes.
- *        Deal with the mesh import (see importEntityMeshes())
- *        New MVertex* instance are created by the import
- *        and are deleted by the destructor.
- */
+// Store a collection of GEntity background meshes and deal with the mesh
+// import (see importEntityMeshes()). New MVertex instances are created by the
+// import and deleted by the destructor.
 class GlobalBackgroundMesh {
 public:
   const std::string &name;
@@ -156,21 +145,15 @@ public:
   ~GlobalBackgroundMesh(); /* delete the MVertex instances stored in
                               mesh_vertices */
 
-  /**
-   * @brief Fill the entityMesh map by copying the meshes in the GModel.
-   *        New MVertex, MLine and MTriangle instances are created, the
-   * background meshes are totally independant from the ones in the GModel after
-   *        this function call.
-   *        Quadrangles in GFace are split into two triangles.
-   *
-   * @param gm the GModel containing the GEntity whose meshes are imported
-   * @param overwriteExisting Delete existing background meshes before importing
-   * new ones
-   *
-   * @warning Only import GVertex, GEdge, GFace for the moment, not GRegion
-   *
-   * @return 0 if successful import
-   */
+  // Fill the entityMesh map by copying the meshes in the GModel gm. New
+  // MVertex, MLine and MTriangle instances are created, so that the background
+  // meshes are completely independent from the ones in the GModel after this
+  // call. Quadrangles in GFace are split into two triangles. Returns 0 on
+  // success.
+  //
+  // overwriteExisting: delete the existing background meshes before importing
+  //
+  // Warning: only GVertex, GEdge and GFace are imported for now, not GRegion.
   int importGModelMeshes(GModel *gm, bool overwriteExisting = true);
 };
 

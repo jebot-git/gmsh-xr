@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -8,18 +8,12 @@
 
 #include "Plugin.h"
 
-extern "C" {
-GMSH_Plugin *GMSH_RegisterMeshSubEntitiesPlugin();
-}
-
 class GMSH_MeshSubEntitiesPlugin : public GMSH_PostPlugin {
 public:
-  GMSH_MeshSubEntitiesPlugin() {}
+  GMSH_MeshSubEntitiesPlugin();
   std::string getName() const { return "MeshSubEntities"; }
   std::string getShortHelp() const { return "Mesh subentities generator"; }
   std::string getHelp() const;
-  int getNbOptions() const;
-  StringXNumber *getOption(int iopt);
   PView *execute(PView *);
 };
 

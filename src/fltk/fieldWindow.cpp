@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -117,7 +117,8 @@ fieldWindow::fieldWindow(int deltaFontSize) : _deltaFontSize(deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Size fields");
+                          "Size fields",
+                          CTX::instance()->fieldOffset);
   win->box(GMSH_WINDOW_BOX);
 
 #if defined(HAVE_MESH)
@@ -200,8 +201,6 @@ fieldWindow::fieldWindow(int deltaFontSize) : _deltaFontSize(deltaFontSize)
 
 #endif
 
-  win->position(CTX::instance()->fieldPosition[0],
-                CTX::instance()->fieldPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;

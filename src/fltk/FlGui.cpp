@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -18,7 +18,6 @@
 #include <FL/fl_ask.H>
 #include "FlGui.h"
 #include "drawContextFltk.h"
-#include "drawContextFltkCairo.h"
 #include "graphicWindow.h"
 #include "optionWindow.h"
 #include "fieldWindow.h"
@@ -34,6 +33,7 @@
 #include "helpWindow.h"
 #include "colorbarWindow.h"
 #include "fileDialogs.h"
+#include "windowPlacement.h"
 #include "GmshDefines.h"
 #include "GmshMessage.h"
 #include "GModel.h"
@@ -252,6 +252,43 @@ static void gmsh_rotate(Fl_Color c)
   vv(-0.1, 0.9);
   vv(-0.1, 0.3);
   fl_end_polygon();
+}
+
+// a crosshair over a target: the point of the model a query asks about
+static void gmsh_query(Fl_Color c)
+{
+  fl_color(c);
+  fl_begin_line();
+  fl_arc(0.0, 0.0, 0.45, 0.0, 360.0);
+  fl_end_line();
+  bl;
+  vv(-0.9, 0.0);
+  vv(-0.2, 0.0);
+  el;
+  bl;
+  vv(0.2, 0.0);
+  vv(0.9, 0.0);
+  el;
+  bl;
+  vv(0.0, -0.9);
+  vv(0.0, -0.2);
+  el;
+  bl;
+  vv(0.0, 0.2);
+  vv(0.0, 0.9);
+  el;
+}
+
+// a ruler: the line a measurement draws between the two points it is given
+static void gmsh_measure(Fl_Color c)
+{
+  fl_color(c);
+  bl; vv(-0.75, 0.55); vv(0.75, -0.55); el;   // the line
+  bl; vv(-0.90, 0.35); vv(-0.60, 0.75); el;   // its ends
+  bl; vv(0.60, -0.75); vv(0.90, -0.35); el;
+  bl; vv(-0.38, 0.28); vv(-0.29, 0.40); el;   // graduations
+  bl; vv(0.00, 0.00); vv(0.09, 0.12); el;
+  bl; vv(0.38, -0.28); vv(0.46, -0.15); el;
 }
 
 static void gmsh_models(Fl_Color c)
@@ -542,6 +579,8 @@ FlGui::FlGui(int argc, char **argv, bool quitShouldExit,
   fl_add_symbol("gmsh_forward", gmsh_forward, 1);
   fl_add_symbol("gmsh_rotate", gmsh_rotate, 1);
   fl_add_symbol("gmsh_models", gmsh_models, 1);
+  fl_add_symbol("gmsh_query", gmsh_query, 1);
+  fl_add_symbol("gmsh_measure", gmsh_measure, 1);
   fl_add_symbol("gmsh_gear", gmsh_gear, 1);
   fl_add_symbol("gmsh_graph", gmsh_graph, 1);
   fl_add_symbol("gmsh_search", gmsh_search, 1);
@@ -602,13 +641,7 @@ FlGui::FlGui(int argc, char **argv, bool quitShouldExit,
 
   // create window that will be used for fullscreen display
   fullscreen = new openglWindow(100, 100, 100, 100);
-  int mode = FL_RGB | FL_DEPTH | (CTX::instance()->db ? FL_DOUBLE : FL_SINGLE);
-  if(CTX::instance()->antialiasing) mode |= FL_MULTISAMPLE;
-  if(CTX::instance()->stereo) {
-    mode |= FL_DOUBLE;
-    mode |= FL_STEREO;
-  }
-  fullscreen->mode(mode);
+  fullscreen->mode(openglWindowMode());
   fullscreen->end();
 
   // create all other windows
@@ -790,6 +823,11 @@ int FlGui::testGlobalShortcuts(int event)
   }
   else if(Fl::test_shortcut(FL_CTRL + 't') ||
           Fl::test_shortcut(FL_META + 't')) {
+    onelab_cb(nullptr,  (void *)"compute");
+    status = 1;
+  }
+  else if(Fl::test_shortcut(FL_CTRL + FL_ALT + 't') ||
+          Fl::test_shortcut(FL_META + FL_ALT + 't')) {
     show_hide_menu_cb(nullptr, nullptr);
     status = 1;
   }
@@ -1258,7 +1296,7 @@ void FlGui::copyCurrentOpenglWindowToClipboard()
   // get pixels
   PixelBuffer *buffer =
     new PixelBuffer(width, height, GL_RGB, GL_UNSIGNED_BYTE);
-  buffer->fill(0);
+  buffer->fill();
   unsigned char *pixels = (unsigned char *)buffer->getPixels();
 
   // swap R and B since Windows bitmap format is BGR
@@ -1406,57 +1444,32 @@ void FlGui::storeCurrentWindowsInfo()
   if(graph[0]->isMenuDetached()) {
     CTX::instance()->detachedMenu = 1;
     CTX::instance()->menuSize[1] = graph[0]->getMenuHeight();
-    CTX::instance()->menuPosition[0] = graph[0]->getMenuPositionX();
-    CTX::instance()->menuPosition[1] = graph[0]->getMenuPositionY();
+    storeWindowOffset(graph[0]->getMenuWindow(), CTX::instance()->menuOffset);
   }
   else
     CTX::instance()->detachedMenu = 0;
-  CTX::instance()->optPosition[0] = options->win->x();
-  CTX::instance()->optPosition[1] = options->win->y();
-  CTX::instance()->pluginPosition[0] = plugins->win->x();
-  CTX::instance()->pluginPosition[1] = plugins->win->y();
+  storeWindowOffset(options->win, CTX::instance()->optOffset);
+  storeWindowOffset(plugins->win, CTX::instance()->pluginOffset);
   CTX::instance()->pluginSize[0] = plugins->win->w();
   CTX::instance()->pluginSize[1] = plugins->win->h();
-  CTX::instance()->fieldPosition[0] = fields->win->x();
-  CTX::instance()->fieldPosition[1] = fields->win->y();
+  storeWindowOffset(fields->win, CTX::instance()->fieldOffset);
   CTX::instance()->fieldSize[0] = fields->win->w();
   CTX::instance()->fieldSize[1] = fields->win->h();
-  CTX::instance()->statPosition[0] = stats->win->x();
-  CTX::instance()->statPosition[1] = stats->win->y();
-  CTX::instance()->visPosition[0] = visibility->win->x();
-  CTX::instance()->visPosition[1] = visibility->win->y();
-  CTX::instance()->hotPosition[0] = highordertools->win->x();
-  CTX::instance()->hotPosition[1] = highordertools->win->y();
-  CTX::instance()->clipPosition[0] = clipping->win->x();
-  CTX::instance()->clipPosition[1] = clipping->win->y();
-  CTX::instance()->manipPosition[0] = manip->win->x();
-  CTX::instance()->manipPosition[1] = manip->win->y();
-  if(lastContextWindow == 4) {
-    CTX::instance()->ctxPosition[0] = onelabContext->win->x();
-    CTX::instance()->ctxPosition[1] = onelabContext->win->y();
-  }
-  else if(lastContextWindow == 3) {
-    CTX::instance()->ctxPosition[0] = physicalContext->win->x();
-    CTX::instance()->ctxPosition[1] = physicalContext->win->y();
-  }
-  else if(lastContextWindow == 2) {
-    CTX::instance()->ctxPosition[0] = meshContext->win->x();
-    CTX::instance()->ctxPosition[1] = meshContext->win->y();
-  }
-  else if(lastContextWindow == 1) {
-    CTX::instance()->ctxPosition[0] = transformContext->win->x();
-    CTX::instance()->ctxPosition[1] = transformContext->win->y();
-  }
-  else {
-    CTX::instance()->ctxPosition[0] = elementaryContext->win->x();
-    CTX::instance()->ctxPosition[1] = elementaryContext->win->y();
-  }
+  storeWindowOffset(stats->win, CTX::instance()->statOffset);
+  storeWindowOffset(visibility->win, CTX::instance()->visOffset);
+  storeWindowOffset(highordertools->win, CTX::instance()->hotOffset);
+  storeWindowOffset(clipping->win, CTX::instance()->clipOffset);
+  storeWindowOffset(manip->win, CTX::instance()->manipOffset);
+  Fl_Window *ctx = (lastContextWindow == 4) ? onelabContext->win :
+                   (lastContextWindow == 3) ? physicalContext->win :
+                   (lastContextWindow == 2) ? meshContext->win :
+                   (lastContextWindow == 1) ? transformContext->win :
+                                              elementaryContext->win;
+  storeWindowOffset(ctx, CTX::instance()->ctxOffset);
 #if defined(HAVE_3M)
   storeWindowPosition3M();
 #endif
-
-  fileChooserGetPosition(&CTX::instance()->fileChooserPosition[0],
-                         &CTX::instance()->fileChooserPosition[1]);
+  fileChooserStoreOffset(CTX::instance()->fileChooserOffset);
 }
 
 // Callbacks
@@ -1496,8 +1509,9 @@ void window_cb(Fl_Widget *w, void *data)
       oldy = FlGui::instance()->graph[0]->getWindow()->y();
       oldw = FlGui::instance()->graph[0]->getWindow()->w();
       oldh = FlGui::instance()->graph[0]->getWindow()->h();
-      FlGui::instance()->graph[0]->getWindow()->resize(Fl::x(), Fl::y(),
-                                                       Fl::w(), Fl::h());
+      int x, y, w, h;
+      windowWorkArea(FlGui::instance()->graph[0]->getWindow(), x, y, w, h);
+      FlGui::instance()->graph[0]->getWindow()->resize(x, y, w, h);
       zoom = 1;
     }
     else {
@@ -1507,9 +1521,12 @@ void window_cb(Fl_Widget *w, void *data)
   }
   else if(str == "fullscreen") {
     if(!fullscreen) {
-      // resize to screen size first, in case fullscreen does not work
+      // resize to the size of the screen of the current graphic window first,
+      // in case fullscreen does not work
       int x, y, w, h;
-      Fl::screen_xywh(x, y, w, h);
+      Fl::screen_xywh(
+        x, y, w, h,
+        windowScreen(FlGui::instance()->getCurrentOpenglWindow()->top_window()));
       FlGui::instance()->fullscreen->resize(x, y, w, h);
       // setting resizable() is necessary with recent FLTK versions (1.4)
       FlGui::instance()->fullscreen->resizable(FlGui::instance()->fullscreen);

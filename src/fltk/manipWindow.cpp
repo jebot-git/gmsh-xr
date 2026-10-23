@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -41,7 +41,8 @@ manipWindow::manipWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Manipulator");
+                          "Manipulator",
+                          CTX::instance()->manipOffset);
   win->box(GMSH_WINDOW_BOX);
 
   Fl_Box *top[3], *left[3];
@@ -98,8 +99,6 @@ manipWindow::manipWindow(int deltaFontSize)
     o->callback(status_xyz1p_cb, (void *)"reset");
   }
 
-  win->position(CTX::instance()->manipPosition[0],
-                CTX::instance()->manipPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;

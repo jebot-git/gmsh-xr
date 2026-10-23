@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -438,7 +438,7 @@ inline void CondNumBasis::getInvCondNumGeneral(
   }
 
   case 1: {
-    Msg::Warning("Inverse condition number not implemented in 1D");
+    Msg::Info("Inverse condition number not implemented in 1D");
     condNum.setAll(0.);
     break;
   }

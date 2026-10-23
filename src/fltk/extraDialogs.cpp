@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -34,6 +34,7 @@
 #include "drawContext.h"
 #include "GModel.h"
 #include "Context.h"
+#include "Options.h"
 #include "PView.h"
 
 // Arrow editor
@@ -95,6 +96,57 @@ int arrowEditor(const char *title, double &a, double &b, double &c)
     }
   }
   return 0;
+}
+
+// Opacity chooser
+
+int opacityChooser(const char *title, const std::string &category,
+                        int index, const std::string &name)
+{
+  double val;
+  NumberOption(GMSH_GET, category.c_str(), index, name.c_str(), val);
+
+  paletteWindow win(BB + IW + 2 * WB, BH + 2 * WB,
+                    CTX::instance()->nonModalWindows ? true : false);
+  win.label(title);
+  win.hotspot(win);
+  Fl_Value_Slider slider(WB, WB, BB + IW, BH);
+  slider.type(FL_HOR_SLIDER);
+  slider.bounds(0., 1.);
+  slider.value(val);
+  slider.when(FL_WHEN_CHANGED | FL_WHEN_RELEASE);
+
+  struct Context {
+    const std::string &category;
+    int index;
+    const std::string &name;
+    bool done = false;
+  } ctx{category, index, name};
+  slider.callback(
+    [](Fl_Widget *w, void *data) {
+      auto *s = static_cast<Fl_Value_Slider *>(w);
+      auto *c = static_cast<Context *>(data);
+      double val = s->value();
+      NumberOption(GMSH_SET | GMSH_GUI, c->category.c_str(), c->index,
+                   c->name.c_str(), val);
+      drawContext::global()->draw();
+      if(Fl::event() == FL_RELEASE) { c->done = true; }
+    },
+    &ctx);
+  win.end();
+  win.show();
+  // the button can be released outside this window, where the slider never
+  // sees it: watch the button state itself, with a timeout
+  bool up = false, down = false;
+  while(!ctx.done && win.shown()) {
+    Fl::wait(0.1);
+    bool held = Fl::event_state(FL_BUTTONS) ? true : false;
+    if(!held) up = true; // not still holding the button that opened us
+    if(up && held) down = true;
+    if(down && !held) ctx.done = true;
+  }
+  win.hide();
+  return ctx.done ? 1 : 0;
 }
 
 // Connection and pattern choosers
@@ -174,20 +226,23 @@ public:
       else if(prefs.entryExists(name))
         prefs.deleteEntry(name);
     }
-    prefs.set((_prefix + "PositionX").c_str(), window->x());
-    prefs.set((_prefix + "PositionY").c_str(), window->y());
+    int offset[2] = {0, 0};
+    storeWindowOffset(window, offset);
+    prefs.set((_prefix + "OffsetX").c_str(), offset[0]);
+    prefs.set((_prefix + "OffsetY").c_str(), offset[1]);
     prefs.set((_prefix + "Width").c_str(), window->w());
     prefs.set((_prefix + "Height").c_str(), window->h());
   }
   std::string run()
   {
     Fl_Preferences prefs(Fl_Preferences::USER, "fltk.org", "gmsh");
-    int x = 100, y = 100, h = 4 * WB + 10 * BH, w = 3 * BB + 2 * WB;
-    prefs.get((_prefix + "PositionX").c_str(), x, x);
-    prefs.get((_prefix + "PositionY").c_str(), y, y);
+    int offset[2] = {100, 100}, h = 4 * WB + 10 * BH, w = 3 * BB + 2 * WB;
+    prefs.get((_prefix + "OffsetX").c_str(), offset[0], offset[0]);
+    prefs.get((_prefix + "OffsetY").c_str(), offset[1], offset[1]);
     prefs.get((_prefix + "Width").c_str(), w, w);
     prefs.get((_prefix + "Height").c_str(), h, h);
-    window->resize(x, y, w, h);
+    window->size(w, h);
+    placeWindow(window, offset);
     int old = browser->value();
     browser->clear();
     for(int i = 0; i < 100; i++) {
@@ -300,20 +355,23 @@ public:
 
   void save(Fl_Preferences &prefs)
   {
-    prefs.set((_prefix + "PositionX").c_str(), window->x());
-    prefs.set((_prefix + "PositionY").c_str(), window->y());
+    int offset[2] = {0, 0};
+    storeWindowOffset(window, offset);
+    prefs.set((_prefix + "OffsetX").c_str(), offset[0]);
+    prefs.set((_prefix + "OffsetY").c_str(), offset[1]);
     prefs.set((_prefix + "Width").c_str(), window->w());
     prefs.set((_prefix + "Height").c_str(), window->h());
   }
   int run()
   {
     Fl_Preferences prefs(Fl_Preferences::USER, "fltk.org", "gmsh");
-    int x = 100, y = 100, h = 3 * WB + 2 * BH, w = 3 * BB + 2 * WB;
-    prefs.get((_prefix + "PositionX").c_str(), x, x);
-    prefs.get((_prefix + "PositionY").c_str(), y, y);
+    int offset[2] = {100, 100}, h = 3 * WB + 2 * BH, w = 3 * BB + 2 * WB;
+    prefs.get((_prefix + "OffsetX").c_str(), offset[0], offset[0]);
+    prefs.get((_prefix + "OffsetY").c_str(), offset[1], offset[1]);
     prefs.get((_prefix + "Width").c_str(), w, w);
     prefs.get((_prefix + "Height").c_str(), h, h);
-    window->resize(x, y, w, h);
+    window->size(w, h);
+    placeWindow(window, offset);
 
     int order_max = CTX::instance()->mesh.cgnsImportOrder;
     int order = 1;
@@ -431,10 +489,10 @@ int simpleTextEditor(const char *title, const std::string &help,
     editor->edit = new Fl_Text_Editor(WB, WB + BH, 4 * BB, 5 * BH);
     editor->edit->buffer(editor->buff);
     editor->edit->wrap_mode(Fl_Text_Editor::WRAP_AT_BOUNDS, 0);
-    editor->apply = new Fl_Return_Button
-      (4 * BB + WB - BB, 2 * WB + 6 * BH, BB, BH, "Apply");
-    editor->cancel = new Fl_Button
-      (4 * BB - 2 * BB, 2 * WB + 6 * BH, BB, BH, "Cancel");
+    editor->apply =
+      new Fl_Return_Button(4 * BB + WB - BB, 2 * WB + 6 * BH, BB, BH, "Apply");
+    editor->cancel =
+      new Fl_Button(4 * BB - 2 * BB, 2 * WB + 6 * BH, BB, BH, "Cancel");
     Fl_Box *resize = new Fl_Box(WB, WB + BH, WB, WB);
     editor->window->end();
     editor->window->resizable(resize);

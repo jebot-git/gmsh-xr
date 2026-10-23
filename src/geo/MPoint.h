@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -49,7 +49,6 @@ public:
   }
   virtual int getType() const { return TYPE_PNT; }
   virtual int getTypeForMSH() const { return MSH_PNT; }
-  virtual int getTypeForVTK() const { return 1; }
   virtual const char *getStringForPOS() const { return "SP"; }
   virtual void getNode(int num, double &u, double &v, double &w) const
   {
@@ -70,9 +69,9 @@ public:
   {
     return BasisFactory::getJacobianBasis(MSH_PNT);
   }
-  virtual bool isInside(double u, double v, double w) const
+  using MElement::isInside;
+  virtual bool isInside(double u, double v, double w, double tol) const
   {
-    double tol = getTolerance();
     if(fabs(u) > tol || fabs(v) > tol || fabs(w) > tol) return false;
     return true;
   }

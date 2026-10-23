@@ -1,4 +1,4 @@
-# Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+# Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 #
 # See the LICENSE.txt file in the Gmsh root directory for license information.
 # Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -55,7 +55,7 @@ set(SRC
   libmetis/mmd.c
   libmetis/ometis.c
   libmetis/options.c
- # libmetis/parmetis.c
+  libmetis/parmetis.c
   libmetis/pmetis.c
   libmetis/refine.c
   libmetis/separator.c

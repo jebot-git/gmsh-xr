@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -16,12 +16,13 @@ private:
 
 public:
   partitionVertex(GModel *model, int num, const std::vector<int> &partitions)
-    : discreteVertex(model, num), _partitions(partitions),
+    : discreteVertex(model, num, 0., 0., 0., false), _partitions(partitions),
       _parentEntity(nullptr)
   {
   }
   partitionVertex(GModel *model, int num)
-    : discreteVertex(model, num), _partitions(), _parentEntity(nullptr)
+    : discreteVertex(model, num, 0., 0., 0., false), _partitions(),
+      _parentEntity(nullptr)
   {
   }
   partitionVertex(GModel *model, const std::vector<int> &partitions)
@@ -32,7 +33,7 @@ public:
   virtual GeomType geomType() const { return PartitionPoint; }
   virtual void setParentEntity(GEntity *v) { _parentEntity = v; }
   virtual GEntity *getParentEntity() { return _parentEntity; }
-  virtual void setPartitions(std::vector<int> &partitions)
+  virtual void setPartitions(const std::vector<int> &partitions)
   {
     _partitions = partitions;
   }

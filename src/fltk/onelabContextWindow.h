@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -21,8 +21,9 @@ private:
   bool _redraw;
 
 public:
-  contextWindow(int w, int h, bool nonModal, const char *l = nullptr)
-    : paletteWindow(w, h, nonModal, l), _redraw(false)
+  contextWindow(int w, int h, bool nonModal, const char *l = nullptr,
+                int *offset = nullptr)
+    : paletteWindow(w, h, nonModal, l, offset), _redraw(false)
   {
   }
   virtual int handle(int event);

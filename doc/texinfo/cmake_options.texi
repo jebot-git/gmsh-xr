@@ -2,12 +2,10 @@
 
 @item ENABLE_3M
 Enable proprietary 3M extension (default: OFF)
-@item ENABLE_ALGLIB
-Enable ALGLIB (used by some mesh optimizers) (default: ON)
-@item ENABLE_ANN
-Enable ANN (used for fast point search in mesh/post) (default: ON)
 @item ENABLE_BAMG
 Enable Bamg 2D anisotropic mesh generator (default: ON)
+@item ENABLE_BOUNDARY_LAYERS
+Enable boundary layer plugin (default: ON)
 @item ENABLE_BLAS_LAPACK
 Enable BLAS/Lapack for linear algebra (if Eigen if disabled) (default: OFF)
 @item ENABLE_BLOSSOM
@@ -26,16 +24,14 @@ Enable iOS library target (experimental) (default: OFF)
 Enable CGNS import/export (experimental) (default: ON)
 @item ENABLE_CGNS_CPEX0045
 Enable high-order CGNS import/export following CPEX0045 (experimental) (default: OFF)
-@item ENABLE_CAIRO
-Enable Cairo to render fonts (experimental) (default: ON)
-@item ENABLE_PROFILE
-Enable profiling compiler flags (default: OFF)
-@item ENABLE_DINTEGRATION
-Enable discrete integration (needed for levelsets) (default: ON)
+@item ENABLE_COVERAGE
+Enable code coverage instrumentation (GCC/Clang only) (default: OFF)
 @item ENABLE_DOMHEX
 Enable experimental DOMHEX code (default: ON)
 @item ENABLE_EIGEN
 Enable Eigen for linear algebra (instead of Blas/Lapack) (default: ON)
+@item ENABLE_FFMPEG
+Enable FFmpeg for MP4 movie export (default: ON)
 @item ENABLE_FLTK
 Enable FLTK graphical user interface (requires mesh/post) (default: ON)
 @item ENABLE_GEOMETRYCENTRAL
@@ -44,20 +40,18 @@ Enable geometry-central library (experimental) (default: ON)
 Enable GetDP solver (linked as a library, experimental) (default: ON)
 @item ENABLE_GMM
 Enable GMM linear solvers (simple alternative to PETSc) (default: ON)
-@item ENABLE_GMP
-Enable GMP for Kbipack (advanced) (default: ON)
 @item ENABLE_GRAPHICS
 Enable building graphics lib even without GUI (advanced) (default: OFF)
 @item ENABLE_HXT
 Enable HXT library (for reparametrization and meshing) (default: ON)
-@item ENABLE_KBIPACK
-Enable Kbipack (neeeded by homology solver) (default: ON)
 @item ENABLE_MATHEX
 Enable Mathex expression parser (used by plugins and options) (default: ON)
 @item ENABLE_MED
 Enable MED mesh and post file formats (default: ON)
 @item ENABLE_MESH
 Enable mesh module (default: ON)
+@item ENABLE_MESQUITE
+Enable mesquite (default: ON)
 @item ENABLE_METIS
 Enable Metis mesh partitioner (default: ON)
 @item ENABLE_MMG
@@ -72,6 +66,8 @@ Enable static Visual C++ runtime (default: OFF)
 Enable MUMPS sparse direct linear solver (default: OFF)
 @item ENABLE_NETGEN
 Enable Netgen 3D frontal mesh generator (default: ON)
+@item ENABLE_NII2MESH
+Enable 3D voxel image to a triangulated mesh (default: ON)
 @item ENABLE_NUMPY
 Enable fullMatrix and numpy array conversion for private API (default: OFF)
 @item ENABLE_PETSC4PY
@@ -84,6 +80,8 @@ Enable OpenCASCADE CAF module (for STEP/IGES attributes) (default: ON)
 Link OpenCASCADE static instead of dynamic libraries (requires ENABLE_OCC) (default: OFF)
 @item ENABLE_OCC_TBB
 Add TBB libraries in list of OCC libraries (default: OFF)
+@item ENABLE_OCTREE_SIZE_FIELD
+Enable the octree-based automatic mesh size field (contrib/OctreeSizeField) (default: ON)
 @item ENABLE_ONELAB
 Enable ONELAB solver interface (default: ON)
 @item ENABLE_ONELAB_METAMODEL
@@ -96,10 +94,6 @@ Enable OpenMP (default: ON)
 Enable high-order mesh optimization tools (default: ON)
 @item ENABLE_OS_SPECIFIC_INSTALL
 Enable OS-specific (e.g. app bundle) installation (default: OFF)
-@item ENABLE_OSMESA
-Enable OSMesa for offscreen rendering (experimental) (default: OFF)
-@item ENABLE_P4EST
-Enable p4est for enabling automatic mesh size field (experimental) (default: OFF)
 @item ENABLE_PACKAGE_STRIP
 Strip symbols in install packages to reduce install size (default: ON)
 @item ENABLE_PARSER
@@ -116,12 +110,12 @@ Enable Poppler for displaying PDF documents (experimental) (default: OFF)
 Enable private API (default: OFF)
 @item ENABLE_PRO
 Enable PRO extensions (default: ON)
+@item ENABLE_PROFILE
+Enable profiling compiler flags (default: OFF)
 @item ENABLE_QUADMESHINGTOOLS
 Enable QuadMeshingTools extensions (default: ON)
 @item ENABLE_QUADTRI
 Enable QuadTri structured meshing extensions (default: ON)
-@item ENABLE_REVOROPT
-Enable Revoropt (used for CVT remeshing) (default: OFF)
 @item ENABLE_RPATH
 Use RPATH in dynamically linked targets (default: ON)
 @item ENABLE_SLEPC
@@ -134,14 +128,16 @@ Use system versions of contrib libraries, when possible (default: OFF)
 Enable libtcmalloc (fast malloc that does not release memory) (default: OFF)
 @item ENABLE_TESTS
 Enable tests (default: ON)
+@item ENABLE_TINYOBJLOADER
+Enable TibyObjLoader for reading Wavefront files) (default: ON)
+@item ENABLE_TINYXML2
+Enable TinyXML2 parser (used by XAO reader) (default: ON)
 @item ENABLE_TOUCHBAR
 Enable Apple Touch bar (default: ON)
 @item ENABLE_VISUDEV
 Enable additional visualization capabilities for development purposes (default: OFF)
 @item ENABLE_VOROPP
 Enable voro++ (for hex meshing, experimental) (default: ON)
-@item ENABLE_WINSLOWUNTANGLER
-Enable WinslowUntangler extensions (requires ALGLIB) (default: ON)
 @item ENABLE_WRAP_JAVA
 Generate SWIG Java wrappers for private API (default: OFF)
 @item ENABLE_WRAP_PYTHON

@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -125,7 +125,7 @@ void partition_opt_num_partitions_cb(Fl_Widget *widget, void *data)
     val = static_cast<unsigned>(dlg->inputNumPartition->value());
   }
 
-  dlg->choiceMetisAlg->value((val <= 8) ? 0 : 1);
+  //dlg->choiceMetisAlg->value((val <= 8) ? 0 : 1);
 }
 
 void partition_defaults_cb(Fl_Widget *widget, void *data)
@@ -150,7 +150,7 @@ void partition_partition_cb(Fl_Widget *widget, void *data)
   if(!ier) {
     opt_mesh_zone_definition(0, GMSH_SET, 2.); // Define zone by partition
     opt_mesh_color_carousel(0, GMSH_SET | GMSH_GUI, 3.);
-    CTX::instance()->mesh.changed = ENT_ALL;
+    CTX::instance()->meshChanged();
     FlGui::instance()->resetVisibility();
     drawContext::global()->draw();
   }
@@ -216,6 +216,10 @@ void partition_dialog()
 
   static Fl_Menu_Item metisAlgMenu[] = {{"Recursive", 0, nullptr, nullptr},
                                         {"K-way", 0, nullptr, nullptr},
+#if defined(HAVE_MTMETIS)
+                                        {"Multithreaded k-way", 0, nullptr,
+                                         nullptr},
+#endif
                                         {nullptr}};
 
   static Fl_Menu_Item metisEdgeMatchingMenu[] = {

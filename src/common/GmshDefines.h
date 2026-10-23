@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -9,6 +9,7 @@
 // IO file formats (numbers should not be changed)
 #define FORMAT_MSH          1
 #define FORMAT_UNV          2
+#define FORMAT_VTU          3
 #define FORMAT_XPM          4
 #define FORMAT_PS           5
 #define FORMAT_BMP          6
@@ -62,6 +63,7 @@
 #define FORMAT_RAD          55
 #define FORMAT_XAO          56
 #define FORMAT_OBJ          57
+#define FORMAT_MP4          58
 
 // Element types
 #define TYPE_PNT     1
@@ -146,10 +148,6 @@
 #define MSH_LIN_9    64
 #define MSH_LIN_10   65
 #define MSH_LIN_11   66
-#define MSH_LIN_B    67
-#define MSH_TRI_B    68
-#define MSH_POLYG_B  69
-#define MSH_LIN_C    70
 // TETS COMPLETE (6->10)
 #define MSH_TET_84   71
 #define MSH_TET_120  72
@@ -256,6 +254,7 @@
 #define ALGO_3D_MMG3D        7
 #define ALGO_3D_RTREE        9
 #define ALGO_3D_HXT          10
+#define ALGO_3D_PDEL3D       11
 
 // Meshing methods
 #define MESH_NONE         0

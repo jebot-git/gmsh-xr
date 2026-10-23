@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -62,6 +62,7 @@ public:
   int delFace(GFace *face);
 
   virtual std::vector<GFace *> faces() const { return l_faces; }
+  virtual std::vector<GEntity *> boundaryEntities() const;
 
   virtual std::vector<int> faceOrientations() const { return l_dirs; }
   void set(std::vector<GFace *> const &f) { l_faces = f; }
@@ -73,6 +74,9 @@ public:
   }
   void setBoundFaces(const std::set<int> &tagFaces);
   void setBoundFaces(const std::vector<int> &tagFaces,
+                     const std::vector<int> &signFaces);
+  // (the surfaces themselves, for a reader that has found them)
+  void setBoundFaces(const std::vector<GFace *> &faces,
                      const std::vector<int> &signFaces);
 
   // direct access to embedded entities
@@ -124,7 +128,6 @@ public:
   // get total/by-type number of elements in the mesh
   std::size_t getNumMeshElements() const;
   std::size_t getNumMeshElementsByType(const int familyType) const;
-  std::size_t getNumMeshParentElements();
   void getNumMeshElements(unsigned *const c) const;
 
   // get the start of the array of a type of element

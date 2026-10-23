@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -13,6 +13,10 @@
 #include "GModel.h"
 #include "MElement.h"
 #include "PView.h"
+#include "PViewData.h"
+#include "adaptiveData.h"
+#include "PViewDataGModel.h"
+#include "PViewOptions.h"
 #include "Context.h"
 #include "OS.h"
 
@@ -106,46 +110,46 @@ statisticsWindow::statisticsWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Statistics");
+                          "Statistics",
+                          CTX::instance()->statOffset);
   win->box(GMSH_WINDOW_BOX);
   {
     Fl_Tabs *o = new Fl_Tabs(WB, WB, width - 2 * WB, height - 3 * WB - BH);
     {
       group[0] = new Fl_Group(WB, WB + BH, width - 2 * WB,
                               height - 3 * WB - 2 * BH, "Geometry");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 1 * BH, IW, BH, "Points");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 2 * BH, IW, BH, "Curves");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 3 * BH, IW, BH, "Surfaces");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 4 * BH, IW, BH, "Volumes");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 5 * BH, IW, BH, "Physical groups");
+      // the elementary entities, and the physical groups, by dimension
+      int cw = 8 * FL_NORMAL_SIZE;
+      new Fl_Box(2 * WB, 2 * WB + 1 * BH, cw, 2 * BH, "Elementary\nentities");
+      new Fl_Box(3 * WB + cw, 2 * WB + 1 * BH, cw, 2 * BH, "Physical\ngroups");
+      const char *rows[4] = {"Points", "Curves", "Surfaces", "Volumes"};
+      for(int r = 0; r < 4; r++)
+        value[num++] = new Fl_Output(2 * WB, 2 * WB + (r + 3) * BH, cw, BH);
+      for(int r = 0; r < 4; r++) {
+        value[num++] =
+          new Fl_Output(3 * WB + cw, 2 * WB + (r + 3) * BH, cw, BH);
+        Fl_Box *b = new Fl_Box(3 * WB + 2 * cw, 2 * WB + (r + 3) * BH,
+                               width - 5 * WB - 2 * cw, BH, rows[r]);
+        b->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+      }
       group[0]->end();
     }
     {
       group[1] = new Fl_Group(WB, WB + BH, width - 2 * WB,
                               height - 3 * WB - 2 * BH, "Mesh");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 1 * BH, IW, BH, "Nodes");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 2 * BH, IW, BH, "Points");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 3 * BH, IW, BH, "Lines");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 4 * BH, IW, BH, "Triangles");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 5 * BH, IW, BH, "Quadrangles");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 6 * BH, IW, BH, "Tetrahedra");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 7 * BH, IW, BH, "Hexahedra");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 8 * BH, IW, BH, "Prisms");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 9 * BH, IW, BH, "Pyramids");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 10 * BH, IW, BH, "Trihedra");
+      const char *rows[12] = {"Nodes",      "Points",      "Lines",
+                              "Triangles",  "Quadrangles", "Polygons",
+                              "Tetrahedra", "Hexahedra",   "Prisms",
+                              "Pyramids",   "Trihedra",    "Polyhedra"};
+      for(int r = 0; r < 12; r++)
+        value[num++] =
+          new Fl_Output(2 * WB, 2 * WB + (r + 1) * BH, IW, BH, rows[r]);
 
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 11 * BH, IW, BH, "Time for 1D mesh");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 12 * BH, IW, BH, "Time for 2D mesh");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 13 * BH, IW, BH, "Time for 3D mesh");
+      value[num] = new Fl_Output(2 * WB, 2 * WB + 13 * BH, IW, BH,
+                                 "Time for 1D / 2D / 3D mesh");
+      value[num]->tooltip("Time spent meshing the curves, the surfaces and "
+                          "the volumes, in seconds");
+      num++;
 
       value[num] = new Fl_Output(2 * WB, 2 * WB + 14 * BH, IW, BH, "SICN");
       value[num]->tooltip("~ signed inverse condition number");
@@ -186,22 +190,27 @@ statisticsWindow::statisticsWindow(int deltaFontSize)
     {
       group[2] = new Fl_Group(WB, WB + BH, width - 2 * WB,
                               height - 3 * WB - 2 * BH, "Post-processing");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 1 * BH, IW, BH, "Views");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 2 * BH, IW, BH, "Points");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 3 * BH, IW, BH, "Lines");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 4 * BH, IW, BH, "Triangles");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 5 * BH, IW, BH, "Quadrangles");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 6 * BH, IW, BH, "Tetrahedra");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 7 * BH, IW, BH, "Hexahedra");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 8 * BH, IW, BH, "Prisms");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 9 * BH, IW, BH, "Pyramids");
-      value[num++] =
-        new Fl_Output(2 * WB, 2 * WB + 10 * BH, IW, BH, "Trihedra");
-      value[num++] = new Fl_Output(2 * WB, 2 * WB + 11 * BH, IW, BH, "Strings");
+      // the data as given, and the elements the adaptive views are refined
+      // into
+      int cw = 8 * FL_NORMAL_SIZE;
+      new Fl_Box(2 * WB, 2 * WB + 1 * BH, cw, BH, "Data");
+      new Fl_Box(3 * WB + cw, 2 * WB + 1 * BH, cw, BH, "Adapted");
+      const char *rows[13] = {
+        "Views",    "Points",     "Lines",     "Triangles", "Quadrangles",
+        "Polygons", "Tetrahedra", "Hexahedra", "Prisms",    "Pyramids",
+        "Trihedra", "Polyhedra",  "Strings"};
+      for(int r = 0; r < 13; r++)
+        value[num++] = new Fl_Output(2 * WB, 2 * WB + (r + 2) * BH, cw, BH);
+      for(int r = 0; r < 13; r++) {
+        value[num] = new Fl_Output(3 * WB + cw, 2 * WB + (r + 2) * BH, cw, BH);
+        value[num++]->tooltip("The elements of the adaptive views as last "
+                              "refined (they are refined when drawn), with "
+                              "those refined apart where clipping planes cut");
+        // (apart from the fields, which are greyed out when empty)
+        Fl_Box *b = new Fl_Box(3 * WB + 2 * cw, 2 * WB + (r + 2) * BH,
+                               width - 5 * WB - 2 * cw, BH, rows[r]);
+        b->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+      }
       group[2]->end();
     }
     o->end();
@@ -221,87 +230,135 @@ statisticsWindow::statisticsWindow(int deltaFontSize)
     o->callback(statistics_update_cb);
   }
 
-  win->position(CTX::instance()->statPosition[0],
-                CTX::instance()->statPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;
 }
 
+#if defined(HAVE_POST)
+// the points, lines, triangles, quadrangles, polygons, tetrahedra, hexahedra,
+// prisms, pyramids, trihedra and polyhedra of a view; for model-based data,
+// those that have data at the step shown (the model may have more: e.g. a view
+// of the part of a partitioned mesh a process computed, in the model of all
+// the parts)
+static void countViewElements(PViewData *data, int step, double count[11])
+{
+  if(step < 0) {
+    count[0] += data->getNumPoints();
+    count[1] += data->getNumLines();
+    count[2] += data->getNumTriangles();
+    count[3] += data->getNumQuadrangles();
+    count[4] += data->getNumPolygons();
+    count[5] += data->getNumTetrahedra();
+    count[6] += data->getNumHexahedra();
+    count[7] += data->getNumPrisms();
+    count[8] += data->getNumPyramids();
+    count[9] += data->getNumTrihedra();
+    count[10] += data->getNumPolyhedra();
+    return;
+  }
+  if(!data->hasTimeStep(step)) step = data->getFirstNonEmptyTimeStep();
+  if(!data->hasTimeStep(step)) return;
+  for(int ent = 0; ent < data->getNumEntities(step); ent++) {
+    for(int ele = 0; ele < data->getNumElements(step, ent); ele++) {
+      if(data->skipElement(step, ent, ele)) continue;
+      switch(data->getType(step, ent, ele)) {
+      case TYPE_PNT: count[0]++; break;
+      case TYPE_LIN: count[1]++; break;
+      case TYPE_TRI: count[2]++; break;
+      case TYPE_QUA: count[3]++; break;
+      case TYPE_POLYG: count[4]++; break;
+      case TYPE_TET: count[5]++; break;
+      case TYPE_HEX: count[6]++; break;
+      case TYPE_PRI: count[7]++; break;
+      case TYPE_PYR: count[8]++; break;
+      case TYPE_TRIH: count[9]++; break;
+      case TYPE_POLYH: count[10]++; break;
+      }
+    }
+  }
+}
+
+// the elements of a view (see countViewElements())
+static void countViewElements(PView *p, double count[11])
+{
+  PViewData *data = p->getData();
+  int step =
+    dynamic_cast<PViewDataGModel *>(data) ? p->getOptions()->timeStep : -1;
+  countViewElements(data, step, count);
+}
+#endif
+
 void statisticsWindow::compute(bool elementQuality)
 {
   int num = 0;
   static double s[50];
-  static char label[50][256];
+  static char label[64][256];
 
 #if defined(HAVE_MESH)
+  // the counts (cheap), then the qualities of the elements (not: they are
+  // asked for on the mesh tab only, and the ones computed last are kept, e.g.
+  // when the histogram adds a view or when the other tabs are updated, as
+  // long as neither the mesh nor the entities counted change)
   bool visibleOnly = visible->value() ? true : false;
-  if(elementQuality)
+  GetStatistics(s, nullptr, visibleOnly);
+  CTX *ctx = CTX::instance();
+  std::vector<std::size_t> key = {
+    (std::size_t)GModel::current(), (std::size_t)ctx->meshContentStamp,
+    visibleOnly, visibleOnly ? (std::size_t)ctx->entityVisibilityStamp : 0};
+  for(int i = 4; i < 14; i++) key.push_back((std::size_t)s[i]);
+  key.push_back((std::size_t)s[46]);
+  key.push_back((std::size_t)s[47]);
+  if(!_qualityKey.empty() && key == _qualityKey) {
+    elementQuality = true;
+    for(int i = 0; i < 9; i++) s[18 + i] = _qualityStats[i];
+  }
+  else if(elementQuality && group[1]->visible()) {
     GetStatistics(s, quality, visibleOnly);
-  else
-    GetStatistics(s, nullptr, visibleOnly);
+    _qualityKey = key;
+    for(int i = 0; i < 9; i++) _qualityStats[i] = s[18 + i];
+  }
+  else {
+    elementQuality = false;
+    _qualityKey.clear();
+  }
 #else
   for(int i = 0; i < 3; i++)
     for(int j = 0; j < 100; j++)
       quality[i][j] = 0;
 #endif
 
-  // geom
-  sprintf(label[num], "%g", s[0]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[1]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[2]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[3]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[45]);
-  value[num]->value(label[num]);
-  num++;
+  // geometry: the elementary entities, then the physical groups, by dimension
+  for(int dim = 0; dim < 4; dim++) {
+    sprintf(label[num], "%g", s[dim]);
+    value[num]->value(label[num]);
+    num++;
+  }
+  std::map<int, std::vector<GEntity *>> physicals[4];
+  GModel::current()->getPhysicalGroups(physicals);
+  for(int dim = 0; dim < 4; dim++) {
+    sprintf(label[num], "%d", (int)physicals[dim].size());
+    value[num]->value(label[num]);
+    num++;
+  }
 
-  // mesh
-  sprintf(label[num], "%g", s[4]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[5]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[6]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[7]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[8]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[9]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[10]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[11]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[12]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[13]);
-  value[num]->value(label[num]);
-  num++;
-
-  sprintf(label[num], "%g", s[14]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[15]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[16]);
+  // mesh: nodes, then the elements by dimension
+  const int meshStat[12] = {4, 5, 6, 7, 8, 46, 9, 10, 11, 12, 13, 47};
+  for(int r = 0; r < 12; r++) {
+    sprintf(label[num], "%g", s[meshStat[r]]);
+    value[num]->value(label[num]);
+    num++;
+  }
+  // (the three times must fit in one field: no more than three significant
+  // digits each)
+  auto time = [](double t) {
+    static char str[3][32];
+    static int i = 0;
+    char *c = str[i++ % 3];
+    sprintf(c, t < 10. ? "%.2f" : t < 100. ? "%.1f" : "%.0f", t);
+    return c;
+  };
+  sprintf(label[num], "%s / %s / %s", time(s[14]), time(s[15]), time(s[16]));
   value[num]->value(label[num]);
   num++;
 
@@ -336,45 +393,60 @@ void statisticsWindow::compute(bool elementQuality)
     num++;
   }
 
-  // post
-  sprintf(label[num], "%g", s[27]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[28]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[29]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[30]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[31]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[32]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[33]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[34]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[35]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[36]);
-  value[num]->value(label[num]);
-  num++;
-  sprintf(label[num], "%g", s[37]);
-  value[num]->value(label[num]);
+  // post: the views, their elements by dimension and their strings (counted
+  // here, not in GetStatistics(), which the options reading the numbers of
+  // mesh elements call)
+  double v[13] = {0.};
+#if defined(HAVE_POST)
+  v[0] = PView::list.size();
+  for(auto p : PView::list) {
+    countViewElements(p, &v[1]);
+    v[12] += p->getData()->getNumStrings2D() + p->getData()->getNumStrings3D();
+  }
+#endif
+  for(int r = 0; r < 13; r++) {
+    sprintf(label[num], "%g", v[r]);
+    value[num]->value(label[num]);
+    num++;
+  }
+
+#if defined(HAVE_POST)
+  // the elements of the adaptive views, as last refined (they are refined
+  // when they are used, as drawn, not here), with those refined apart where
+  // the clipping planes cut them (see PView::refineClipLayer())
+  double a[12] = {0.};
+  for(auto p : PView::list) {
+    bool refined = false;
+    for(adaptiveData *ad :
+        {p->getData()->getAdaptiveData(), p->getClipAdaptiveData()}) {
+      PViewData *d = ad ? ad->getData() : nullptr;
+      if(!d) continue;
+      refined = true;
+      countViewElements(d, -1, &a[1]);
+    }
+    if(refined) a[0] += 1;
+  }
+  // (empty and greyed out if no view is refined)
+  for(int r = 0; r < 12; r++) {
+    sprintf(label[num], "%g", a[r]);
+    value[num]->value(a[0] ? label[num] : nullptr);
+    if(a[0])
+      value[num]->activate();
+    else
+      value[num]->deactivate();
+    num++;
+  }
+#else
+  num += 12;
+#endif
+  value[num]->value(nullptr); // (no strings in the refined data)
+  value[num]->deactivate();
   num++;
 
   static char mem[256];
   std::size_t m = GetMemoryUsage();
   if(m) {
-    sprintf(mem, "Memory usage: %gMb", m / 1024. / 1024.);
+    sprintf(mem, "Memory usage: %gMB", m / 1024. / 1024.);
     memUsage->label(mem);
   }
 }

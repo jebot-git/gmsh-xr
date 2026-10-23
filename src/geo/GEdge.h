@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -62,6 +62,13 @@ public:
   void setEndVertex(GVertex *gv) { _v1 = gv; if(gv) gv->addEdge(this); }
   virtual GVertex *getBeginVertex() const { return _v0; }
   virtual GVertex *getEndVertex() const { return _v1; }
+  virtual std::vector<GEntity *> boundaryEntities() const
+  {
+    std::vector<GEntity *> entities;
+    if(_v0) entities.push_back(_v0);
+    if(_v1 && _v1 != _v0) entities.push_back(_v1);
+    return entities;
+  }
   void setVertex(GVertex *const f, const int orientation)
   {
     if(orientation > 0)
@@ -244,7 +251,9 @@ public:
                       const double relax = 1, bool first = true) const;
 
   // relocate mesh vertices using parametric coordinates
-  void relocateMeshVertices();
+  void relocateMeshVertices
+    (const std::vector<double> &pmin = std::vector<double>(),
+     const std::vector<double> &pmax = std::vector<double>());
 
   struct {
     char method;

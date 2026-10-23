@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -17,7 +17,6 @@ template <class scalar> class simpleFunction;
 class GModel;
 class PView;
 class groupOfElements;
-class gLevelset;
 
 struct LagrangeMultiplierField {
   int _tag;
@@ -95,7 +94,6 @@ public:
   void readInputFile(const std::string &meshFileName);
   void read(const std::string s) { readInputFile(s.c_str()); }
   virtual void setMesh(const std::string &meshFileName, int dim = 0);
-  void cutMesh(gLevelset *ls);
   void setElasticDomain(int phys, double E, double nu);
   void setLagrangeMultipliers(int phys, double tau, const SVector3 &d, int tag,
                               simpleFunction<double> *f);

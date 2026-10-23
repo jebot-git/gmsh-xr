@@ -27,7 +27,7 @@ call gmsh%initialize(argv)
 ! colors:
 call gmsh%option%setNumber("Geometry.PointNumbers", 1d0)
 call gmsh%option%setColor("Geometry.Color.Points", 255, 165, 0)
-call gmsh%option%setColor("General.Color.Text", 255, 255, 255)
+call gmsh%option%setColor("General.Color.Text", 0, 0, 255)
 call gmsh%option%setColor("Mesh.Color.Points", 255, 0, 0)
 
 ! Note that for conciseness "Color." can be omitted in color options:
@@ -38,8 +38,8 @@ call gmsh%option%setColor("Geometry.Surfaces", r, g, b, a)
 ! parameters can be modified interactively in the GUI, and can be exchanged with
 ! other codes connected to the same ONELAB database. The database can be
 ! accessed through the Gmsh Fortran API using JSON-formatted strings (see
-! https://gitlab.onelab.info/doc/tutorials/-/wikis/ONELAB-JSON-interface for
-! more information):
+! https://gitlab.onelab.info/doc/models/wikis/ONELAB-JSON-interface for more
+! information):
 call gmsh%onelab%set('['//&
   '{'//&
     '"type":"number",'//&

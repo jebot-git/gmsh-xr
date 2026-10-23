@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -55,15 +55,13 @@ static void draw_stl(std::vector<SPoint3> &vertices,
                      std::vector<SVector3> &normals,
                      std::vector<int> &triangles)
 {
-  GLint mode[2];
-  glGetIntegerv(GL_POLYGON_MODE, mode);
+  bool fill = gmshPolygonFilled();
   if(CTX::instance()->geom.surfaceType == 1)
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    gmshPolygonFill(false);
   else
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-  glEnable(GL_LIGHTING);
-  glLightModelf(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
-  glColor4ubv((GLubyte *)&CTX::instance()->color.geom.highlight[0]);
+    gmshPolygonFill(true);
+  gmshLightTwoSide(true);
+  gmshColor4ubv((GLubyte *)&CTX::instance()->color.geom.highlight[0]);
 
   VertexArray va(3, triangles.size());
   for(std::size_t i = 0; i < triangles.size(); i += 3) {
@@ -81,17 +79,8 @@ static void draw_stl(std::vector<SPoint3> &vertices,
   }
   va.finalize();
 
-  glVertexPointer(3, GL_FLOAT, 0, va.getVertexArray());
-  glEnableClientState(GL_VERTEX_ARRAY);
-  glNormalPointer(NORMAL_GLTYPE, 0, va.getNormalArray());
-  glEnableClientState(GL_NORMAL_ARRAY);
-  glDisableClientState(GL_COLOR_ARRAY);
-  glDrawArrays(GL_TRIANGLES, 0, va.getNumVertices());
-  glDisableClientState(GL_VERTEX_ARRAY);
-  glDisableClientState(GL_NORMAL_ARRAY);
-
-  glDisable(GL_LIGHTING);
-  glPolygonMode(GL_FRONT_AND_BACK, mode[1]);
+  drawVertexArray(&va, GL_TRIANGLES, GMSH_DRAW_LIGHT);
+  gmshPolygonFill(fill);
 }
 
 static void elementary_add_parameter_cb(Fl_Widget *w, void *data)
@@ -151,17 +140,17 @@ static void draw_circle(void *context)
     return;
 
   if(angle2 <= angle1) return;
-  glColor4ubv((GLubyte *)&CTX::instance()->color.geom.highlight[0]);
-  glBegin(GL_LINE_STRIP);
+  gmshColor4ubv((GLubyte *)&CTX::instance()->color.geom.highlight[0]);
+  gmshBegin(GL_LINE_STRIP);
   const int N = 30;
   for(int i = 0; i < N; i++) {
     double t = angle1 + (double)i / (double)(N - 1) * (angle2 - angle1);
     double x = xc + r * cos(t);
     double y = yc + r * sin(t);
     double z = zc;
-    glVertex3d(x, y, z);
+    gmshVertex3d(x, y, z);
   }
-  glEnd();
+  gmshEnd();
 }
 
 static void elementary_draw_circle_cb(Fl_Widget *w, void *data)
@@ -205,17 +194,17 @@ static void draw_ellipse(void *context)
   if(!getval(FlGui::instance()->elementaryContext->input[20]->value(), angle2))
     return;
   if(angle2 <= angle1) return;
-  glColor4ubv((GLubyte *)&CTX::instance()->color.geom.highlight[0]);
-  glBegin(GL_LINE_STRIP);
+  gmshColor4ubv((GLubyte *)&CTX::instance()->color.geom.highlight[0]);
+  gmshBegin(GL_LINE_STRIP);
   const int N = 30;
   for(int i = 0; i < N; i++) {
     double t = angle1 + (double)i / (double)(N - 1) * (angle2 - angle1);
     double x = xc + rx * cos(t);
     double y = yc + ry * sin(t);
     double z = zc;
-    glVertex3d(x, y, z);
+    gmshVertex3d(x, y, z);
   }
-  glEnd();
+  gmshEnd();
 }
 
 static void elementary_draw_ellipse_cb(Fl_Widget *w, void *data)
@@ -666,7 +655,8 @@ elementaryContextWindow::elementaryContextWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Elementary Entity Context");
+                          "Elementary Entity Context",
+                          CTX::instance()->ctxOffset);
   win->box(GMSH_WINDOW_BOX);
   {
     tab1 = new Fl_Tabs(WB, WB, width - 2 * WB, height - 3 * WB - BH);
@@ -1043,8 +1033,6 @@ elementaryContextWindow::elementaryContextWindow(int deltaFontSize)
   tab1->show();
   tab2->hide();
 
-  win->position(CTX::instance()->ctxPosition[0],
-                CTX::instance()->ctxPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;
@@ -1180,7 +1168,8 @@ physicalContextWindow::physicalContextWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Physical Group Context");
+                          "Physical Group Context",
+                          CTX::instance()->ctxOffset);
   win->box(GMSH_WINDOW_BOX);
 
   {
@@ -1233,8 +1222,6 @@ physicalContextWindow::physicalContextWindow(int deltaFontSize)
     tab->end();
   }
 
-  win->position(CTX::instance()->ctxPosition[0],
-                CTX::instance()->ctxPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;
@@ -1375,7 +1362,8 @@ transformContextWindow::transformContextWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Elementary Operation Context");
+                          "Elementary Operation Context",
+                          CTX::instance()->ctxOffset);
   win->box(GMSH_WINDOW_BOX);
   {
     Fl_Tabs *o = new Fl_Tabs(WB, WB, width - 2 * WB, height - 3 * WB - BH);
@@ -1521,8 +1509,6 @@ transformContextWindow::transformContextWindow(int deltaFontSize)
   choice->align(FL_ALIGN_RIGHT);
   choice->callback(selection_mode_cb);
 
-  win->position(CTX::instance()->ctxPosition[0],
-                CTX::instance()->ctxPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;
@@ -1579,7 +1565,8 @@ meshContextWindow::meshContextWindow(int deltaFontSize)
   int height = 4 * WB + 4 * BH;
 
   win = new paletteWindow(width, height, CTX::instance()->nonModalWindows,
-                          "Mesh Context");
+                          "Mesh Context",
+                          CTX::instance()->ctxOffset);
   win->box(GMSH_WINDOW_BOX);
   {
     Fl_Tabs *o = new Fl_Tabs(WB, WB, width - 2 * WB, height - 2 * WB);
@@ -1633,8 +1620,6 @@ meshContextWindow::meshContextWindow(int deltaFontSize)
     o->end();
   }
 
-  win->position(CTX::instance()->ctxPosition[0],
-                CTX::instance()->ctxPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;

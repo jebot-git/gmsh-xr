@@ -49,7 +49,7 @@ DefineConstant[ angle = {90, Min 0, Max 120, Step 1,
 // ONELAB parameter does not exist in the database, `DefineConstant' will create
 // it and assign the default value `90'. Moreover, if the variable `angle' was
 // defined before the call to `DefineConstant', the `DefineConstant' call would
-// simply be skipped. This allows to build generic parametric models, whose
+// simply be skipped. This lets you build generic parametric models, whose
 // parameters can be frozen from the outside - the parameters ceasing to be
 // "parameters".
 //
@@ -81,7 +81,7 @@ Physical Volume(101) = {1, 2, out[1]};
 
 Geometry.PointNumbers = 1;
 Geometry.Color.Points = Orange;
-General.Color.Text = White;
+General.Color.Text = Blue;
 Mesh.Color.Points = {255, 0, 0};
 
 // Note that all colors can be defined literally or numerically, i.e.

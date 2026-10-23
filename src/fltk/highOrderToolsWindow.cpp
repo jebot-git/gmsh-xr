@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -59,7 +59,7 @@ static void highordertools_runp_cb(Fl_Widget *w, void *data)
   }
   */
 
-  CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+  CTX::instance()->meshChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
   drawContext::global()->draw();
 }
 
@@ -180,7 +180,7 @@ static void highordertools_runopti_cb(Fl_Widget *w, void *data)
     p.weight = o->value[5]->value();
     p.distanceFactor = o->value[7]->value();
     // should handle periodic case here:
-    p.fixBndNodes = (o->CAD && o->choice[0]->value()) ? 1 : 0;
+    p.fixBndNodes = (o->CAD && o->choice[0]->value() == 0) ? 1 : 0;
     p.strategy = o->choice[3]->value();
     p.maxAdaptBlob = o->value[9]->value();
     p.adaptBlobLayerFact = (int)o->value[10]->value();
@@ -232,7 +232,7 @@ static void highordertools_runopti_cb(Fl_Widget *w, void *data)
 
   FixPeriodicMesh(GModel::current());
 
-  CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+  CTX::instance()->meshChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
   drawContext::global()->draw();
 }
 
@@ -282,7 +282,8 @@ highOrderToolsWindow::highOrderToolsWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "High-order tools");
+                          "High-order tools",
+                          CTX::instance()->hotOffset);
   win->box(GMSH_WINDOW_BOX);
 
   int y = WB;
@@ -482,8 +483,6 @@ highOrderToolsWindow::highOrderToolsWindow(int deltaFontSize)
   push[1]->callback(highordertools_runopti_cb);
 
   // win->resizable(o);
-  win->position(CTX::instance()->hotPosition[0],
-                CTX::instance()->hotPosition[1]);
   win->end();
   FL_NORMAL_SIZE += deltaFontSize;
 }
@@ -499,7 +498,7 @@ void highOrderToolsWindow::show(bool redrawOnly)
     butt[0]->value(!complete);
     if(CAD) {
       box->label("CAD model is available");
-      choice[0]->value(1);
+      choice[0]->value(CTX::instance()->mesh.hoFixBndNodes ? 0 : 1);
     }
     else {
       box->label("CAD model is not available");
@@ -530,7 +529,8 @@ highOrderToolsWindow::highOrderToolsWindow(int deltaFontSize)
   int height = 24 * BH;
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "High-order tools");
+                          "High-order tools",
+                          CTX::instance()->hotOffset);
   win->box(GMSH_WINDOW_BOX);
 
   int y = WB;
@@ -540,8 +540,6 @@ highOrderToolsWindow::highOrderToolsWindow(int deltaFontSize)
   box->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
   box->label("High-order tools requires mesh module");
 
-  win->position(CTX::instance()->hotPosition[0],
-                CTX::instance()->hotPosition[1]);
   win->end();
   FL_NORMAL_SIZE += deltaFontSize;
 }

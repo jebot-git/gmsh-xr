@@ -74,7 +74,11 @@ static double orient4d(double*, double *, double *, double *, double *,
 #include <cstring>
 
 #ifdef HXT_WITHOUT_GMSH
+#ifndef _MSC_VER
 #warning "Using TetgenBR without Gmsh - please note the different licensing terms"
+#else
+#pragma message "Using TetgenBR without Gmsh - please note the different licensing terms"
+#endif
 #include "tetgenBR.h"
 #include "tetgenBR.cxx"
 #else
@@ -552,7 +556,7 @@ int tetgenmesh::reconstructmesh(void *p, double tol){
       }
 
 
-      int counter = 0;
+      uint64_t counter = 0;
       while (tetloop.tet != (tetrahedron *) NULL) {
         tetloop.ver = 11;
         p[0] = org(tetloop);

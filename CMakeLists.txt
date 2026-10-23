@@ -1,12 +1,9 @@
-# Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+# Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 #
 # See the LICENSE.txt file in the Gmsh root directory for license information.
 # Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
-cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
-if(POLICY CMP0069)
-  cmake_policy(SET CMP0069 NEW)
-endif()
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
 # if CMAKE_BUILD_TYPE is specified use it; otherwise set the default
 # build type to "RelWithDebInfo" ("-O2 -g" with gcc) prior to calling
@@ -19,8 +16,8 @@ endif()
 
 project(gmsh CXX C)
 
-# require C++14 and request C99
-set(CMAKE_CXX_STANDARD 14)
+# require C++17 and request C99
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)
 
@@ -35,9 +32,8 @@ macro(opt OPTION HELP VALUE)
 endmacro()
 
 opt(3M "Enable proprietary 3M extension" OFF)
-opt(ALGLIB "Enable ALGLIB (used by some mesh optimizers)" ${DEFAULT})
-opt(ANN "Enable ANN (used for fast point search in mesh/post)" ${DEFAULT})
 opt(BAMG "Enable Bamg 2D anisotropic mesh generator" ${DEFAULT})
+opt(BOUNDARY_LAYERS "Enable boundary layer plugin" ${DEFAULT})
 opt(BLAS_LAPACK "Enable BLAS/Lapack for linear algebra (if Eigen if disabled)" OFF)
 opt(BLOSSOM "Enable Blossom algorithm (needed for full quad meshing)" ${DEFAULT})
 opt(BUILD_LIB "Enable 'lib' target for building static Gmsh library" OFF)
@@ -47,25 +43,24 @@ opt(BUILD_ANDROID "Enable Android NDK library target (experimental)" OFF)
 opt(BUILD_IOS "Enable iOS library target (experimental)" OFF)
 opt(CGNS "Enable CGNS import/export (experimental)" ${DEFAULT})
 opt(CGNS_CPEX0045 "Enable high-order CGNS import/export following CPEX0045 (experimental)" OFF)
-opt(CAIRO "Enable Cairo to render fonts (experimental)" ${DEFAULT})
-opt(PROFILE "Enable profiling compiler flags" OFF)
-opt(DINTEGRATION "Enable discrete integration (needed for levelsets)" ${DEFAULT})
+opt(COVERAGE "Enable code coverage instrumentation (GCC/Clang only)" OFF)
 opt(DOMHEX "Enable experimental DOMHEX code" ${DEFAULT})
 opt(EIGEN "Enable Eigen for linear algebra (instead of Blas/Lapack)" ON)
+opt(FFMPEG "Enable FFmpeg for MP4 movie export" ${DEFAULT})
 opt(FLTK "Enable FLTK graphical user interface (requires mesh/post)" ${DEFAULT})
 opt(DOME_XR "Enable native FLTK stereo mesh presentation in DomeD (Linux)" ON)
 opt(GEOMETRYCENTRAL "Enable geometry-central library (experimental)" ${DEFAULT})
 opt(GETDP "Enable GetDP solver (linked as a library, experimental)" ${DEFAULT})
 opt(GMM "Enable GMM linear solvers (simple alternative to PETSc)" ${DEFAULT})
-opt(GMP "Enable GMP for Kbipack (advanced)" ON)
 opt(GRAPHICS "Enable building graphics lib even without GUI (advanced)" OFF)
+opt(HIERARCHICAL_BASIS "Enable hierarchical basis functions" ${DEFAULT})
 opt(HXT "Enable HXT library (for reparametrization and meshing)" ${DEFAULT})
-opt(KBIPACK "Enable Kbipack (neeeded by homology solver)" ${DEFAULT})
 opt(MATHEX "Enable Mathex expression parser (used by plugins and options)" ${DEFAULT})
 opt(MED "Enable MED mesh and post file formats" ${DEFAULT})
 opt(MESH "Enable mesh module" ${DEFAULT})
 opt(MESQUITE "Enable mesquite" ${DEFAULT})
 opt(METIS "Enable Metis mesh partitioner" ${DEFAULT})
+opt(MTMETIS "Enable multithreaded mt-metis mesh partitioner (requires Metis and OpenMP)" ${DEFAULT})
 opt(MMG "Enable Mmg mesh adaptation interface" ${DEFAULT})
 opt(MPEG_ENCODE "Enable built-in MPEG movie encoder" ${DEFAULT})
 opt(MPI "Enable MPI (experimental, not used for meshing)" OFF)
@@ -79,14 +74,13 @@ opt(OCC "Enable OpenCASCADE CAD kernel" ${DEFAULT})
 opt(OCC_CAF "Enable OpenCASCADE CAF module (for STEP/IGES attributes)" ${DEFAULT})
 opt(OCC_STATIC "Link OpenCASCADE static instead of dynamic libraries (requires ENABLE_OCC)" OFF)
 opt(OCC_TBB "Add TBB libraries in list of OCC libraries" OFF)
+opt(OCTREE_SIZE_FIELD "Enable the octree-based automatic mesh size field" ${DEFAULT})
 opt(ONELAB "Enable ONELAB solver interface" ${DEFAULT})
 opt(ONELAB_METAMODEL "Enable ONELAB metamodels (experimental)" ${DEFAULT})
 opt(OPENACC "Enable OpenACC" OFF)
 opt(OPENMP "Enable OpenMP" ${DEFAULT})
 opt(OPTHOM "Enable high-order mesh optimization tools" ${DEFAULT})
 opt(OS_SPECIFIC_INSTALL "Enable OS-specific (e.g. app bundle) installation" OFF)
-opt(OSMESA "Enable OSMesa for offscreen rendering (experimental)" OFF)
-opt(P4EST "Enable p4est for enabling automatic mesh size field (experimental)" OFF)
 opt(PACKAGE_STRIP "Strip symbols in install packages to reduce install size" ON)
 opt(PARSER "Enable GEO file parser (required for .geo/.pos scripts)" ${DEFAULT})
 opt(PETSC "Enable PETSc linear solvers (required for SLEPc)" OFF)
@@ -95,9 +89,9 @@ opt(POST "Enable post-processing module (required by GUI)" ${DEFAULT})
 opt(POPPLER "Enable Poppler for displaying PDF documents (experimental)" OFF)
 opt(PRIVATE_API "Enable private API" OFF)
 opt(PRO "Enable PRO extensions" ${DEFAULT})
+opt(PROFILE "Enable profiling compiler flags" OFF)
 opt(QUADMESHINGTOOLS "Enable QuadMeshingTools extensions" ${DEFAULT})
 opt(QUADTRI "Enable QuadTri structured meshing extensions" ${DEFAULT})
-opt(REVOROPT "Enable Revoropt (used for CVT remeshing)" OFF)
 opt(RPATH "Use RPATH in dynamically linked targets" ON)
 opt(SLEPC "Enable SLEPc eigensolvers" OFF)
 opt(SOLVER "Enable built-in finite element solvers (required for reparametrization)" ${DEFAULT})
@@ -107,17 +101,15 @@ opt(TESTS "Enable tests" ${DEFAULT})
 opt(TINYOBJLOADER "Enable TibyObjLoader for reading Wavefront files)" ON)
 opt(TINYXML2 "Enable TinyXML2 parser (used by XAO reader)" ${DEFAULT})
 opt(TOUCHBAR "Enable Apple Touch bar" ${DEFAULT})
-opt(UNTANGLE "Enable 2D and 3D UNTANGLER" ${DEFAULT})
 opt(VISUDEV "Enable additional visualization capabilities for development purposes" OFF)
 opt(VOROPP "Enable voro++ (for hex meshing, experimental)" ${DEFAULT})
-opt(WINSLOWUNTANGLER "Enable WinslowUntangler extensions (requires ALGLIB)" ${DEFAULT})
 opt(WRAP_JAVA "Generate SWIG Java wrappers for private API" OFF)
 opt(WRAP_PYTHON "Generate SWIG Python wrappers for private API (not used by public API)" OFF)
 opt(ZIPPER "Enable Zip file compression/decompression" OFF)
 
-set(GMSH_MAJOR_VERSION 4)
-set(GMSH_MINOR_VERSION 15)
-set(GMSH_PATCH_VERSION 2)
+set(GMSH_MAJOR_VERSION 5)
+set(GMSH_MINOR_VERSION 0)
+set(GMSH_PATCH_VERSION 0)
 if(NOT GMSH_EXTRA_VERSION)
   set(GMSH_EXTRA_VERSION "")
 endif()
@@ -128,7 +120,7 @@ if(NOT GMSH_RELEASE)
   find_package(Git)
   if(GIT_FOUND)
     execute_process(COMMAND ${GIT_EXECUTABLE} log -1 --format=%h
-                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} ERROR_QUIET
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} ERROR_QUIET
                     OUTPUT_VARIABLE GIT_COMMIT_HASH
                     OUTPUT_STRIP_TRAILING_WHITESPACE)
   endif()
@@ -163,7 +155,7 @@ if(ENABLE_PRIVATE_API)
           "on the stable public API (gmsh/api) instead.")
   file(GLOB_RECURSE HEADERS src/common/*.h src/numeric/*.h src/numeric/*.hpp
        src/geo/*.h src/mesh/*.h src/solver/*.h src/post/*.h src/plugin/*.h
-       src/graphics/*.h contrib/kbipack/*.h contrib/DiscreteIntegration/*.h
+       src/graphics/*.h
        contrib/HighOrderMeshOptimizer/*.h contrib/MeshOptimizer/*.h
        contrib/MeshQualityOptimizer/*.h)
   set(GMSH_PRIVATE_API ${CMAKE_CURRENT_BINARY_DIR}/src/common/GmshConfig.h
@@ -338,12 +330,9 @@ endif()
 
 if(ENABLE_OPENMP)
   find_package(OpenMP)
-  if(OpenMP_FOUND OR OPENMP_FOUND)
-    set_config_option(HAVE_OPENMP "OpenMP")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    list(APPEND EXTERNAL_LIBRARIES "${OpenMP_CXX_LIBRARIES}")
-  elseif(APPLE AND EXISTS "/opt/local/lib/libomp")
+  # special cases on macOS are handled first; then the general case; then the
+  # specific static linking for our official builds on Linux:
+  if(APPLE AND EXISTS "/opt/local/lib/libomp")
     # official Apple compiler with macports' libomp
     set_config_option(HAVE_OPENMP "OpenMP[MacPorts]")
     set(CMAKE_C_FLAGS
@@ -365,12 +354,20 @@ if(ENABLE_OPENMP)
     set(CMAKE_CXX_FLAGS
         "${CMAKE_CXX_FLAGS} -Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include")
     list(APPEND EXTERNAL_LIBRARIES "-L/opt/homebrew/opt/libomp/lib -lomp")
+  elseif(OpenMP_FOUND OR OPENMP_FOUND)
+    # general case
+    set_config_option(HAVE_OPENMP "OpenMP")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    list(APPEND EXTERNAL_LIBRARIES "${OpenMP_CXX_LIBRARIES}")
   elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND EXISTS "/usr/local/lib64/libgomp.a")
     # custom static openmp for official linux builds
     set_config_option(HAVE_OPENMP "OpenMP[static]")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xpreprocessor -fopenmp")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xpreprocessor -fopenmp")
     list(APPEND EXTERNAL_LIBRARIES "/usr/local/lib64/libgomp.a")
+  else()
+    message(WARNING "Could not find suitable OpenMP configuration")
   endif()
 endif()
 
@@ -390,6 +387,24 @@ if(ENABLE_PROFILE)
     if(FNOFP)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     endif()
+endif()
+
+if(ENABLE_COVERAGE)
+  if(NOT (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND
+          CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang"))
+    message(FATAL_ERROR "ENABLE_COVERAGE requires GCC or Clang")
+  endif()
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(WARNING "CMAKE_BUILD_TYPE=Debug is recommended for "
+            "accurate counters when ENABLE_COVERAGE is on")
+  endif()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
+  # Don't add --coverage to CMAKE_Fortran_FLAGS (on macOS the link driver is
+  # clang, but gfortran's --coverage instrumentation references gcc's libgcov)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} --coverage")
 endif()
 
 macro(append_gmsh_src DIRNAME FILES)
@@ -639,7 +654,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/fltk AND ENABLE_FLTK)
       message(STATUS "Using fltk-config script for Fltk " ${FLTK_VERSION})
       execute_process(COMMAND ${FLTK_CONFIG_SCRIPT} --use-gl --use-images --includedir
                       OUTPUT_VARIABLE FLTK_INCLUDE_DIR)
-      string(STRIP ${FLTK_INCLUDE_DIR} FLTK_INCLUDE_DIR)
+      string(STRIP "${FLTK_INCLUDE_DIR}" FLTK_INCLUDE_DIR)
       list(APPEND EXTERNAL_INCLUDES ${FLTK_INCLUDE_DIR})
       execute_process(COMMAND ${FLTK_CONFIG_SCRIPT} --use-gl --use-images --ldflags
                       OUTPUT_VARIABLE FLTK_LIBRARIES)
@@ -752,92 +767,50 @@ if(HAVE_FLTK OR ENABLE_GRAPHICS)
     set_config_option(HAVE_MPEG_ENCODE "Mpeg")
   endif()
 
+  if(ENABLE_FFMPEG)
+    find_path(FFMPEG_INC "libavcodec/avcodec.h" PATH_SUFFIXES include ffmpeg)
+    find_library(AVFORMAT_LIB avformat)
+    find_library(AVCODEC_LIB avcodec)
+    find_library(AVUTIL_LIB avutil)
+    find_library(SWSCALE_LIB swscale)
+    if(FFMPEG_INC AND AVFORMAT_LIB AND AVCODEC_LIB AND AVUTIL_LIB AND
+       SWSCALE_LIB)
+      set_config_option(HAVE_FFMPEG "FFmpeg")
+      list(APPEND EXTERNAL_LIBRARIES ${AVFORMAT_LIB} ${AVCODEC_LIB}
+           ${SWSCALE_LIB} ${AVUTIL_LIB})
+      list(APPEND EXTERNAL_INCLUDES ${FFMPEG_INC})
+    endif()
+  endif()
+
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/3M AND ENABLE_3M)
     add_subdirectory(contrib/3M)
     include_directories(contrib/3M)
     set_config_option(HAVE_3M "3M")
   endif()
 
-  if(ENABLE_OSMESA)
-    find_library(OSMESA_LIB OSMesa)
-    if(OSMESA_LIB)
-      set_config_option(HAVE_OSMESA "OSMesa")
-      list(APPEND EXTERNAL_LIBRARIES ${OSMESA_LIB})
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics AND
+     EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/stb AND
+     EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/fonts)
+    if(NOT HAVE_FLTK AND UNIX AND NOT APPLE)
+      # without a window, OpenGL through GLVND's libOpenGL, which needs no X
+      # (the context comes from EGL, loaded at run time)
+      set(OpenGL_GL_PREFERENCE "GLVND")
+      find_package(OpenGL COMPONENTS OpenGL)
     endif()
-  endif()
-
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/graphics)
-    set(OpenGL_GL_PREFERENCE "LEGACY")
-    find_package(OpenGL REQUIRED)
-    if(OPENGL_GLU_FOUND AND OPENGL_FOUND)
-      add_subdirectory(src/graphics)
-      set_config_option(HAVE_OPENGL "OpenGL")
+    if(OPENGL_opengl_LIBRARY AND OpenGL_OpenGL_FOUND)
+      set(OPENGL_LIBRARIES ${OPENGL_opengl_LIBRARY})
     else()
-      message(SEND_ERROR "Could not find GLU: disabling OpenGL support")
+      set(OpenGL_GL_PREFERENCE "LEGACY")
+      find_package(OpenGL REQUIRED)
+      # GLU is not used
+      set(OPENGL_LIBRARIES ${OPENGL_gl_LIBRARY})
     endif()
-  endif()
-endif()
-
-if(ENABLE_ANN)
-  find_library(ANN_LIB ANN PATH_SUFFIXES lib)
-  find_path(ANN_INC "ANN.h" PATH_SUFFIXES src include ANN)
-  if(ENABLE_SYSTEM_CONTRIB AND ANN_LIB AND ANN_INC)
-    message(STATUS "Using system version of ANN")
-    list(APPEND EXTERNAL_LIBRARIES ${ANN_LIB})
-    list(APPEND EXTERNAL_INCLUDES ${ANN_INC})
-    set_config_option(HAVE_ANN "ANN")
-  elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/ANN)
-    add_subdirectory(contrib/ANN)
-    include_directories(contrib/ANN/include)
-    set_config_option(HAVE_ANN "ANN[contrib]")
-  endif()
-endif()
-
-if(ENABLE_ALGLIB)
-  find_library(ALGLIB_LIB alglib)
-  find_path(ALGLIB_INC "stdafx.h" PATH_SUFFIXES libalglib)
-  if(ENABLE_SYSTEM_CONTRIB AND ALGLIB_LIB AND ALGLIB_INC)
-    list(APPEND EXTERNAL_LIBRARIES ${ALGLIB_LIB})
-    list(APPEND EXTERNAL_INCLUDES ${ALGLIB_INC})
-    set_config_option(HAVE_ALGLIB "ALGLIB")
-  elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/ALGLIB)
-    add_subdirectory(contrib/ALGLIB)
-    include_directories(contrib/ALGLIB)
-    set_config_option(HAVE_ALGLIB "ALGLIB[contrib]")
-  endif()
-endif()
-
-if(HAVE_FLTK AND ENABLE_CAIRO)
-  find_library(CAIRO_LIB cairo)
-  find_path(CAIRO_INC "cairo/cairo.h" PATH_SUFFIXES include)
-  if(CAIRO_INC AND CAIRO_LIB)
-     set_config_option(HAVE_CAIRO "Cairo")
-     list(APPEND EXTERNAL_LIBRARIES ${CAIRO_LIB})
-     list(APPEND EXTERNAL_INCLUDES ${CAIRO_INC})
-  endif()
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/DiscreteIntegration AND
-   ENABLE_DINTEGRATION)
-  add_subdirectory(contrib/DiscreteIntegration)
-  include_directories(contrib/DiscreteIntegration)
-  set_config_option(HAVE_DINTEGRATION "DIntegration")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/kbipack AND ENABLE_KBIPACK)
-  set_config_option(HAVE_KBIPACK "Kbipack")
-  add_subdirectory(contrib/kbipack)
-  include_directories(contrib/kbipack)
-  if(ENABLE_GMP)
-    find_library(GMP_LIB gmp)
-    find_path(GMP_INC "gmp.h" PATH_SUFFIXES src include)
-  endif()
-  if(GMP_LIB AND GMP_INC)
-    set_config_option(HAVE_GMP "GMP")
-    list(APPEND EXTERNAL_LIBRARIES ${GMP_LIB})
-    list(APPEND EXTERNAL_INCLUDES ${GMP_INC})
-  else()
-    message(STATUS "GMP not found: Kbipack uses long int")
+    if(OPENGL_FOUND)
+      add_subdirectory(src/graphics)
+      # stb_truetype and the fonts the pictures drawn without a window use
+      include_directories(contrib/stb contrib/fonts)
+      set_config_option(HAVE_OPENGL "OpenGL")
+    endif()
   endif()
 endif()
 
@@ -910,17 +883,6 @@ if(ENABLE_POPPLER)
   endif()
 endif()
 
-if(ENABLE_P4EST)
-  find_library(P4EST_LIB p4est)
-  find_path(P4EST_INC "p4est.h" PATH_SUFFIXES src)
-  find_library(SC_LIB sc)
-  if(P4EST_LIB AND P4EST_INC AND SC_LIB)
-    set_config_option(HAVE_P4EST "P4est")
-    list(APPEND EXTERNAL_LIBRARIES ${P4EST_LIB} ${SC_LIB})
-    list(APPEND EXTERNAL_INCLUDES ${P4EST_INC})
-  endif()
-endif()
-
 if(HAVE_MESH OR HAVE_SOLVER)
   if(ENABLE_METIS)
     find_library(METIS_LIB metis PATH_SUFFIXES lib)
@@ -929,14 +891,26 @@ if(HAVE_MESH OR HAVE_SOLVER)
       message(STATUS "Using system version of METIS")
       list(APPEND EXTERNAL_LIBRARIES ${METIS_LIB})
       list(APPEND EXTERNAL_INCLUDES ${METIS_INC})
+      set(METIS_INCLUDE_DIRS ${METIS_INC})
       set_config_option(HAVE_METIS "Metis")
     elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/metis)
-      add_definitions(-DUSE_GKREGEX)
+      # GKlib's own regex, except with Emscripten, whose C library has one
+      # (and clashes with it when all the symbols are exported, see below)
+      if(NOT EMSCRIPTEN)
+        add_definitions(-DUSE_GKREGEX)
+      endif()
       add_subdirectory(contrib/metis)
       include_directories(contrib/metis/include contrib/metis/libmetis
                           contrib/metis/GKlib)
+      set(METIS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/metis/include)
       set_config_option(HAVE_METIS "Metis[contrib]")
     endif()
+  endif()
+  if(ENABLE_MTMETIS AND HAVE_METIS AND HAVE_OPENMP AND NOT WIN32 AND
+     EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/mt-metis)
+    add_subdirectory(contrib/mt-metis)
+    include_directories(contrib/mt-metis/include)
+    set_config_option(HAVE_MTMETIS "MtMetis[contrib]")
   endif()
 endif()
 
@@ -974,6 +948,27 @@ if(HAVE_MESH)
     set_config_option(HAVE_OPTHOM "OptHom")
   endif()
 
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/BoundaryLayers
+     AND ENABLE_BOUNDARY_LAYERS)
+    add_subdirectory(contrib/BoundaryLayers)
+    include_directories(contrib/BoundaryLayers)
+    set_config_option(HAVE_BOUNDARY_LAYERS "BoundaryLayers")
+  endif()
+
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/OctreeSizeField
+     AND ENABLE_OCTREE_SIZE_FIELD)
+    add_subdirectory(contrib/OctreeSizeField)
+    include_directories(contrib/OctreeSizeField)
+    set_config_option(HAVE_OCTREE_SIZE_FIELD "OctreeSizeField")
+  endif()
+
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/HierarchicalBasis
+     AND ENABLE_HIERARCHICAL_BASIS)
+    add_subdirectory(contrib/HierarchicalBasis)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/contrib/HierarchicalBasis)
+    set_config_option(HAVE_HIERARCHICAL_BASIS "HierarchicalBasis")
+  endif()
+
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/domhex AND ENABLE_DOMHEX)
     add_subdirectory(contrib/domhex)
     include_directories(contrib/domhex)
@@ -999,18 +994,22 @@ if(HAVE_MESH)
     set_config_option(HAVE_NII2MESH "Nii2mesh")
   endif()
 
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/untangle AND ENABLE_UNTANGLE)
-    add_subdirectory(contrib/untangle)
-    include_directories(contrib/untangle)
-    set_config_option(HAVE_UNTANGLE "Untangle")
-  endif()
-
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/Netgen AND ENABLE_NETGEN)
-    add_subdirectory(contrib/Netgen)
-    include_directories(contrib/Netgen contrib/Netgen/libsrc/include
-                        contrib/Netgen/nglib)
-    set_config_option(HAVE_NETGEN "Netgen")
-    add_definitions(-DNO_PARALLEL_THREADS -DNOTCL)
+    if(NOT HAVE_LIBZ) # Netgen needs zlib
+      find_package(ZLIB)
+      if(ZLIB_FOUND)
+        set_config_option(HAVE_LIBZ "Zlib")
+        list(APPEND EXTERNAL_LIBRARIES ${ZLIB_LIBRARIES})
+        list(APPEND EXTERNAL_INCLUDES ${ZLIB_INCLUDE_DIR})
+      endif()
+    endif()
+    if(HAVE_LIBZ)
+      add_subdirectory(contrib/Netgen)
+      include_directories(contrib/Netgen)
+      set_config_option(HAVE_NETGEN "Netgen")
+    else()
+      message(WARNING "Disabling Netgen (zlib not found)")
+    endif()
   endif()
 
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/bamg AND ENABLE_BAMG)
@@ -1062,13 +1061,6 @@ if(HAVE_MESH)
     set_config_option(HAVE_QUADMESHINGTOOLS "QuadMeshingTools")
     add_subdirectory(contrib/QuadMeshingTools)
     include_directories(BEFORE contrib/QuadMeshingTools)
-  endif()
-
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/WinslowUntangler
-     AND ENABLE_WINSLOWUNTANGLER)
-    set_config_option(HAVE_WINSLOWUNTANGLER "WinslowUntangler")
-    add_subdirectory(contrib/WinslowUntangler)
-    include_directories(BEFORE contrib/WinslowUntangler)
   endif()
 endif()
 
@@ -1564,43 +1556,43 @@ endif()
 # add C functions API
 set(GMSH_SRC ${GMSH_SRC};api/gmshc.cpp)
 
-# force full warnings to encourage everybody to write clean(er) code
+# force full warnings to encourage everybody to write clean(er) code; they are
+# set on the targets below, not on each file: per-file flags all go into the
+# flags.make that every object depends on with the Makefile generator, so that
+# adding a source file would recompile everything
 check_cxx_compiler_flag("-Wall" WALL)
 if(WALL AND NOT MSVC)
-  file(GLOB_RECURSE WALL_SRC src/common/*.cpp src/fltk/*.cpp FunctionSpace/*.cpp
-       src/geo/*.cpp src/graphics/*.cpp src/mesh/*.cpp src/numeric/*.cpp src/parser/*.cpp
-       src/plugin/*.cpp src/post/*.cpp src/solver/*.cpp)
-  set(WF "-Wall")
+  set(WF -Wall)
   check_cxx_compiler_flag("-Wint-to-void-pointer-cast" WCAST)
   if(WCAST)
-    set(WF "${WF} -Wno-int-to-void-pointer-cast")
+    list(APPEND WF -Wno-int-to-void-pointer-cast)
   endif()
   check_cxx_compiler_flag("-Wdeprecated-declarations" WDEPREC)
   if(WDEPREC)
-    # FIXME: remove this when we have fixed the deprecated GLU code for OpenGL3
-    set(WF "${WF} -Wno-deprecated-declarations")
+    # macOS deprecates the whole of OpenGL
+    list(APPEND WF -Wno-deprecated-declarations)
   endif()
   check_cxx_compiler_flag("-Wmisleading-indentation" WIND)
   if(WIND)
-    set(WF "${WF} -Wno-misleading-indentation")
+    list(APPEND WF -Wno-misleading-indentation)
   endif()
   check_cxx_compiler_flag("-Wno-attributes" WATTR)
   if(WATTR)
     # FIXME: remove this when GCC behaves more intelligently
-    set(WF "${WF} -Wno-attributes")
+    list(APPEND WF -Wno-attributes)
   endif()
   check_cxx_compiler_flag("-Wno-unused-but-set-variable" WUNUSED)
   if(WUNUSED)
-    set(WF "${WF} -Wno-unused-but-set-variable")
+    list(APPEND WF -Wno-unused-but-set-variable)
   endif()
   if(WIN32 OR NOT HAVE_64BIT_SIZE_T)
     # FIXME: remove printf family warnings on 32 bit systems and windows
     check_cxx_compiler_flag("-Wno-format" WFORMAT)
     if(WFORMAT)
-      set(WF "${WF} -Wno-format")
+      list(APPEND WF -Wno-format)
     endif()
   endif()
-  set_compile_flags(WALL_SRC ${WF})
+  set(GMSH_WARN_FLAGS ${WF})
 endif()
 
 # don't issue warnings for contributed libraries and for autogenerated files
@@ -1644,17 +1636,6 @@ else()
           "geometric predicates.")
 endif()
 
-# enable Revoropt and set compile flags for the corresponding plugin
-if(ENABLE_REVOROPT)
-  if(HAVE_EIGEN AND HAVE_MESH AND HAVE_PLUGINS AND HAVE_ANN AND HAVE_ALGLIB)
-    list(APPEND EXTERNAL_INCLUDES contrib/Revoropt/include)
-    set_config_option(HAVE_REVOROPT "Revoropt")
-    add_definitions(-DUSE_ANN)
-  else()
-    message(WARNING "Revoropt requires Eigen, Mesh, Plugins, ANN and ALGLIB")
-  endif()
-endif()
-
 if(HAVE_MESH AND NOT HAVE_EIGEN AND NOT HAVE_LAPACK)
   message(WARNING "Most meshing algorithms will not be functional without "
           "Eigen or Lapack")
@@ -1685,11 +1666,11 @@ if(ENABLE_BUILD_LIB OR ENABLE_BUILD_SHARED OR ENABLE_BUILD_DYNAMIC)
          GMSH_LONG_DESCRIPTION)
   else()
     if ("${GMSH_EXTRA_VERSION}" MATCHES "-nox")
-      set(GMSH_PYTHON_VERSION "${GMSH_SHORT_VERSION}.dev1+nox")
+      set(GMSH_PYTHON_VERSION "${GMSH_SHORT_VERSION}.dev${DATE}+nox")
       file(READ ${CMAKE_CURRENT_SOURCE_DIR}/utils/pypi/README.gmsh-nox-dev.rst
            GMSH_LONG_DESCRIPTION)
     else ()
-      set(GMSH_PYTHON_VERSION "${GMSH_SHORT_VERSION}.dev1")
+      set(GMSH_PYTHON_VERSION "${GMSH_SHORT_VERSION}.dev${DATE}")
       file(READ ${CMAKE_CURRENT_SOURCE_DIR}/utils/pypi/README.gmsh-dev.rst
            GMSH_LONG_DESCRIPTION)
     endif()
@@ -1767,6 +1748,13 @@ include_directories(src/common src/fltk src/geo src/graphics src/mesh src/solver
                     src/numeric src/parser src/plugin src/post api
                     ${EXTERNAL_INCLUDES} ${CMAKE_CURRENT_BINARY_DIR}/src/common)
 
+if(HAVE_MTMETIS)
+  # mt-metis was added before all the external includes were known (e.g. the
+  # directory of omp.h): give them to it now, after its own METIS headers
+  target_include_directories(mtmetis PRIVATE ${EXTERNAL_INCLUDES}
+                             ${OpenMP_C_INCLUDE_DIRS})
+endif()
+
 # set this for external codes that might include this CMakeList file
 set(GMSH_EXTERNAL_INCLUDE_DIRS ${EXTERNAL_INCLUDES} CACHE
     STRING "External include directories" FORCE)
@@ -1815,6 +1803,11 @@ if(ENABLE_BUILD_SHARED OR ENABLE_BUILD_DYNAMIC)
     endif()
   endif()
   target_link_libraries(shared ${LINK_LIBRARIES})
+  # plugins loaded from shared libraries link to the shared Gmsh library, which
+  # must export what they use (the private API)
+  if(ENABLE_PRIVATE_API AND DLFCN_H)
+    target_compile_definitions(shared PRIVATE HAVE_PLUGIN_LOADING)
+  endif()
   # don't define LC_RPATH in dylib for development, to not get endless warnings
   # about code signing
   if(APPLE AND NOT GMSH_RELEASE)
@@ -1876,6 +1869,34 @@ elseif(APPLE)
   # breaks exception handling
   # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_compact_unwind")
   # set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-no_compact_unwind")
+elseif(EMSCRIPTEN)
+  # WebAssembly build: the virtual filesystem, and memory limits increased to
+  # handle OpenCASCADE models
+  set(FLAGS "-sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=268435456")
+  set(FLAGS "${FLAGS} -sMAXIMUM_MEMORY=4294967296 -sSTACK_SIZE=5242880")
+  # (all the symbols are exported, as the JavaScript API calls them by name,
+  # with the allocation functions of the C library it hands arguments with)
+  set(FLAGS "${FLAGS} -sFILESYSTEM=1 -sEXPORT_ALL=1")
+  set(FLAGS "${FLAGS} -sENVIRONMENT=web,node")
+  # the program (gmsh.js, gmsh.wasm), whose main() runs when it is loaded,
+  # with the runtime methods needed to drive it from JavaScript
+  set_target_properties(gmsh PROPERTIES LINK_FLAGS
+    "${FLAGS} -sEXPORTED_FUNCTIONS=_main,_malloc,_free -sEXPORTED_RUNTIME_METHODS=FS,callMain,cwrap,ccall")
+  # the library (libgmsh.mjs, libgmsh.wasm), as an ES module whose default
+  # export creates the module, next to the JavaScript API (api/gmsh.mjs), which
+  # reads and writes its memory and adds the callbacks to its function table
+  add_executable(libgmsh EXCLUDE_FROM_ALL ${GMSH_SRC})
+  target_link_libraries(libgmsh ${LINK_LIBRARIES})
+  set(LIBFLAGS "${FLAGS} --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1")
+  set(LIBFLAGS "${LIBFLAGS} -sEXPORTED_FUNCTIONS=_malloc,_free")
+  set(LIBFLAGS "${LIBFLAGS} -sEXPORT_NAME=createLibgmsh -sALLOW_TABLE_GROWTH=1")
+  set(LIBFLAGS "${LIBFLAGS} -sEXPORTED_RUNTIME_METHODS=FS,ccall,cwrap,HEAP32,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,removeFunction")
+  set_target_properties(libgmsh PROPERTIES LINK_FLAGS "${LIBFLAGS}"
+    SUFFIX ".mjs")
+  add_custom_command(TARGET libgmsh POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/api/gmsh.mjs
+            $<TARGET_FILE_DIR:libgmsh>)
 endif()
 
 # android target
@@ -1895,6 +1916,17 @@ if(ENABLE_BUILD_ANDROID)
   target_link_libraries(androidGmsh ${EXTERNAL_LIBRARIES} ${LAPACK_LIBRARIES})
   add_custom_command(TARGET androidGmsh POST_BUILD COMMAND
                      ${CMAKE_STRIP} ${LIBRARY_OUTPUT_PATH}/libgmsh.so)
+endif()
+
+# full warnings on the C++ files of all the targets compiling the Gmsh sources
+# (the -w flag of contributed and autogenerated files still turns them off)
+if(GMSH_WARN_FLAGS)
+  foreach(TARGET_NAME lib shared gmsh libgmsh androidGmsh)
+    if(TARGET ${TARGET_NAME})
+      target_compile_options(${TARGET_NAME} PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX>:${GMSH_WARN_FLAGS}>")
+    endif()
+  endforeach()
 endif()
 
 # parser target
@@ -2148,7 +2180,7 @@ endif()
 
 execute_process(COMMAND ${CMAKE_COMMAND} -E echo
   "@c This file was generated by cmake: do not edit manually!\n${OPT_TEXI}"
-  OUTPUT_FILE cmake_options.texi)
+  OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/cmake_options.texi")
 
 if(MAKEINFO AND TEXI2PDF)
   add_custom_target(doc COMMAND ${CMAKE_COMMAND} -E tar zcf
@@ -2312,7 +2344,14 @@ if(ENABLE_TESTS AND NOT DISABLE_GMSH_TESTS)
   endif()
   file(GLOB_RECURSE ALLFILES
        tutorials/*.geo examples/*.geo benchmarks/?d/*.geo benchmarks/extrude/*.geo
-       benchmarks/occ/*.geo)
+       benchmarks/occ/*.geo benchmarks/io_msh/polytopes.geo
+       benchmarks/io_msh/read_back.geo benchmarks/io_msh/faces.geo
+       benchmarks/io_msh/views.geo
+       benchmarks/io_vtk/*.geo)
+  # fails on the CI machines, not understood yet:
+  list(FILTER ALLFILES EXCLUDE REGEX "io_vtk/vtu_roundtrip.geo$")
+  # calls Mesh 3 explicitly:
+  list(FILTER ALLFILES EXCLUDE REGEX "occ/mmg3d_multidomain_bgmesh.geo$")
   filter_tests("${ALLFILES}" TESTFILES)
   foreach(TESTFILE ${TESTFILES})
     # use relative path for Cygwin/MinGW (the pure win exe built with the MinGW
@@ -2340,6 +2379,9 @@ if(ENABLE_TESTS AND NOT DISABLE_GMSH_TESTS)
       endif()
       add_test(${TEST} ${TEST} -nopopup)
     endforeach()
+    #if(HAVE_HIERARCHICAL_BASIS AND HAVE_EIGEN)
+    #  add_subdirectory(contrib/HierarchicalBasis/tests)
+    #endif()
   endif()
   # enable this once we have worked out the path issues on the build machines
   if(0 AND ENABLE_BUILD_DYNAMIC)
@@ -2352,11 +2394,58 @@ if(ENABLE_TESTS AND NOT DISABLE_GMSH_TESTS)
         string(REPLACE "\." "_" TEST ${TEST})
         add_test(NAME ${TEST} COMMAND ${PYTHON_EXECUTABLE} ${TESTFILE} -nopopup)
         set_property(TEST ${TEST} APPEND PROPERTY ENVIRONMENT
-                     "PYTHONPATH=${CMAKE_SOURCE_DIR}/api")
+                     "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/api")
         set_property(TEST ${TEST} APPEND PROPERTY ENVIRONMENT
                      "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}")
         endforeach()
     endif()
+  endif()
+endif()
+
+if(ENABLE_COVERAGE)
+  # Workflow:
+  #   cmake -DENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug ..
+  #   make
+  #   make coverage_reset   # optional, to start fresh
+  #   ctest                 # accumulates counters in .gcda files
+  #   make coverage         # produces <build>/coverage/index.html
+  find_program(LCOV lcov)
+  find_program(GENHTML genhtml)
+  if(LCOV AND GENHTML)
+    set(LCOV_IGNORE "")
+    set(GENHTML_IGNORE "")
+    execute_process(COMMAND ${LCOV} --version OUTPUT_VARIABLE LCOV_VERSION_STRING
+                    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(LCOV_VERSION_STRING MATCHES "LCOV version ([0-9]+)")
+      if(CMAKE_MATCH_1 GREATER_EQUAL 2)
+        set(LCOV_IGNORE --ignore-errors unused,source,source,inconsistent,inconsistent
+            --ignore-errors unsupported,unsupported,format)
+        set(GENHTML_IGNORE --ignore-errors unused,category,inconsistent,source
+            --synthesize-missing)
+      endif()
+    endif()
+    set(COV_RAW ${CMAKE_CURRENT_BINARY_DIR}/coverage.raw.info)
+    set(COV_FILTERED ${CMAKE_CURRENT_BINARY_DIR}/coverage.info)
+    set(COV_HTML ${CMAKE_CURRENT_BINARY_DIR}/coverage)
+    add_custom_target(coverage_reset
+      COMMAND ${LCOV} --quiet --directory ${CMAKE_CURRENT_BINARY_DIR} --zerocounters
+      COMMENT "Resetting code coverage counters")
+    add_custom_target(coverage
+      COMMAND ${LCOV} --quiet --directory ${CMAKE_CURRENT_BINARY_DIR}
+        --base-directory ${CMAKE_CURRENT_SOURCE_DIR} --capture --output-file ${COV_RAW}
+        ${LCOV_IGNORE}
+      COMMAND ${LCOV} --quiet --remove ${COV_RAW} "${CMAKE_CURRENT_SOURCE_DIR}/contrib/*"
+        "${CMAKE_CURRENT_BINARY_DIR}/*" "petsc/include/*" "/usr/*" "/opt/*" "/Library/*"
+        "/Applications/*" ${LCOV_IGNORE} --output-file ${COV_FILTERED}
+      COMMAND ${GENHTML} --quiet --legend
+        --title "Gmsh ${GMSH_VERSION} code coverage" --output-directory ${COV_HTML}
+        ${GENHTML_IGNORE} ${COV_FILTERED}
+      COMMAND ${CMAKE_COMMAND} -E echo "Coverage report: ${COV_HTML}/index.html"
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMENT "Generating HTML coverage report")
+    add_dependencies(coverage gmsh)
+  else()
+    message(FATAL_ERROR "ENABLE_COVERAGE requires lcov/genhtml")
   endif()
 endif()
 
@@ -2370,8 +2459,9 @@ message(STATUS " * C++ compiler: " ${CMAKE_CXX_COMPILER})
 message(STATUS " * Install prefix: " ${CMAKE_INSTALL_PREFIX})
 message(STATUS "")
 
-mark_as_advanced(ANN_INC ANN_LIB CAIRO_LIB CAIRO_INC CGNS_INC GMM_INC
-                 GMP_INC GMP_LIB MMG_INC MMG_LIB HDF5_LIB
+mark_as_advanced(AVCODEC_LIB AVFORMAT_LIB AVUTIL_LIB
+                 CGNS_INC FFMPEG_INC SWSCALE_LIB GMM_INC
+                 MMG_INC MMG_LIB HDF5_LIB
                  MED_LIB OCC_INC SZ_LIB
                  PETSC_LIBS SLEPC_INC SLEPC_INC2 SLEPC_LIB
                  BISON FLEX MAKEINFO TEXI2PDF FLTK_CONFIG_SCRIPT

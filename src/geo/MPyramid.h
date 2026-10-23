@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -79,6 +79,12 @@ public:
   {
     return MEdge(_v[edges_pyramid(num, 0)], _v[edges_pyramid(num, 1)]);
   }
+  virtual int getEdgeCorners(int num, MVertex *v[2]) const
+  {
+    v[0] = _v[edges_pyramid(num, 0)];
+    v[1] = _v[edges_pyramid(num, 1)];
+    return 2;
+  }
   virtual int numEdge2numVertex(int numEdge, int numVert) const
   {
     return edges_pyramid(numEdge, numVert);
@@ -105,6 +111,18 @@ public:
     else
       return MFace(_v[0], _v[3], _v[2], _v[1]);
   }
+  virtual int getFaceCorners(int num, MVertex *v[4]) const
+  {
+    if(num < 4) {
+      for(int i = 0; i < 3; i++) v[i] = _v[faces_pyramid(num, i)];
+      return 3;
+    }
+    v[0] = _v[0];
+    v[1] = _v[3];
+    v[2] = _v[2];
+    v[3] = _v[1];
+    return 4;
+  }
   virtual int getNumFacesRep(bool curved);
   virtual void getFaceRep(bool curved, int num, double *x, double *y, double *z,
                           SVector3 *n);
@@ -117,7 +135,6 @@ public:
                            int &rot) const;
   virtual int getType() const { return TYPE_PYR; }
   virtual int getTypeForMSH() const { return MSH_PYR_5; }
-  virtual int getTypeForVTK() const { return 14; }
   virtual const char *getStringForPOS() const { return "SY"; }
   virtual const char *getStringForBDF() const { return "CPYRAM"; }
   virtual const char *getStringForINP() const { return "C3D5"; }
@@ -164,9 +181,9 @@ public:
     }
   }
   virtual SPoint3 barycenterUVW() const { return SPoint3(0., 0., .2); }
-  virtual bool isInside(double u, double v, double w) const
+  using MElement::isInside;
+  virtual bool isInside(double u, double v, double w, double tol) const
   {
-    double tol = getTolerance();
     if(u < (w - (1. + tol)) || u > ((1. + tol) - w) || v < (w - (1. + tol)) ||
        v > ((1. + tol) - w) || w < (-tol) || w > (1. + tol))
       return false;

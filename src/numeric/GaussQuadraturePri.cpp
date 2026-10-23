@@ -1,8 +1,9 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
+#include <mutex>
 #include <vector>
 #include "GaussIntegration.h"
 #include "GaussLegendre1D.h"
@@ -11,6 +12,8 @@ static std::vector<IntPt *> GQP(40, nullptr), GQPGL(40, nullptr);
 
 IntPt *getGQPriPts(int order, bool forceTensorRule)
 {
+  static std::mutex mutex;
+  std::lock_guard<std::mutex> lock(mutex);
   int nLin = (order + 3) / 2;
   int nTri = getNGQTPts(order, forceTensorRule);
   int n = nLin * nTri;

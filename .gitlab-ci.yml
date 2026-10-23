@@ -1,4 +1,4 @@
-# Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+# Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 #
 # See the LICENSE.txt file in the Gmsh root directory for license information.
 # Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -18,7 +18,7 @@ variables:
 # ----------------------------------------------
 
 linux_ci:
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   script:
     - mkdir build
     - cd build
@@ -35,7 +35,7 @@ linux_ci:
     - tags
 
 linux_compatibility_ci:
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   script:
     - mkdir build
     - cd build
@@ -59,7 +59,7 @@ windows_ci:
     - cd build
     - c:\cygwin64\bin\bash -c "/usr/bin/cmake -DCMAKE_PREFIX_PATH='/usr/local/opencascade;/usr/local;/usr/x86_64-w64-mingw32/sys-root/mingw' -DCMAKE_C_COMPILER=/usr/bin/x86_64-w64-mingw32-gcc.exe -DCMAKE_CXX_COMPILER=/usr/bin/x86_64-w64-mingw32-g++.exe -DCMAKE_RC_COMPILER=/usr/bin/x86_64-w64-mingw32-windres.exe -DENABLE_OS_SPECIFIC_INSTALL=1 .. && ls"
     - c:\cygwin64\bin\bash -c "/usr/bin/make -j 8"
-    - c:\cygwin64\bin\bash -c "/usr/bin/ctest -j 8 --output-on-failure && ls"
+    - c:\cygwin64\bin\bash -c "/usr/bin/ctest -j 8 --timeout 600 --output-on-failure && ls"
   tags:
     - windows64
     - shared
@@ -68,10 +68,10 @@ windows_ci:
 
 windows_msvc_ci:
   script:
-    - md build
-    - cd build
+    - md build_msvc
+    - cd build_msvc
     - cmake -DENABLE_OPENMP=0 ..
-    - msbuild package.vcxproj
+    - cmake --build . --target package
   tags:
     - windows64
     - shared
@@ -99,7 +99,7 @@ windows_msvc_ci:
     - docker
 
 linux_official_snapshot:
-  image: onelab/debian.stretch.64bit
+  image: onelab/debian.buster
   variables:
     EXTRA_OPTION: "-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++"
   <<: *linux_official
@@ -107,7 +107,7 @@ linux_official_snapshot:
     - tags
 
 linux_official_release:
-  image: onelab/debian.stretch.64bit
+  image: onelab/debian.buster
   variables:
     EXTRA_OPTION: "-DGMSH_RELEASE=1 -DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++"
   <<: *linux_official
@@ -115,7 +115,7 @@ linux_official_release:
     - /^gmsh_.*$/
 
 linux-sdk_official_snapshot:
-  image: onelab/debian.stretch.64bit
+  image: onelab/debian.buster
   variables:
     EXTRA_OPTION: "-DENABLE_BUILD_DYNAMIC=1 -DINSTALL_SDK_README=1"
   <<: *linux_official
@@ -128,7 +128,7 @@ linux-sdk_official_snapshot:
     expire_in: 1day
 
 linux-sdk_official_release:
-  image: onelab/debian.stretch.64bit
+  image: onelab/debian.buster
   variables:
     EXTRA_OPTION: "-DGMSH_RELEASE=1 -DENABLE_BUILD_DYNAMIC=1 -DINSTALL_SDK_README=1"
   <<: *linux_official
@@ -141,7 +141,7 @@ linux-sdk_official_release:
     expire_in: 1day
 
 linux-nox-sdk_official_snapshot:
-  image: onelab/debian.stretch.64bit
+  image: onelab/debian.buster
   variables:
     EXTRA_OPTION: "-DGMSH_EXTRA_VERSION=-nox -DENABLE_FLTK=0 -DENABLE_OCC_CAF=0 -DENABLE_BUILD_DYNAMIC=1 -DINSTALL_SDK_README=1"
   <<: *linux_official
@@ -153,7 +153,7 @@ linux-nox-sdk_official_snapshot:
     expire_in: 1day
 
 linux-nox-sdk_official_release:
-  image: onelab/debian.stretch.64bit
+  image: onelab/debian.buster
   variables:
     EXTRA_OPTION: "-DGMSH_RELEASE=1 -DGMSH_EXTRA_VERSION=-nox -DENABLE_FLTK=0 -DENABLE_OCC_CAF=0 -DENABLE_BUILD_DYNAMIC=1 -DINSTALL_SDK_README=1"
   <<: *linux_official
@@ -177,7 +177,7 @@ linux-nox-sdk_official_release:
     - c:\cygwin64\bin\bash -c "/usr/bin/cmake -DGMSH_HOST=gmsh.info -DCMAKE_PREFIX_PATH='/usr/local;/usr/x86_64-w64-mingw32/sys-root/mingw' -DCMAKE_C_COMPILER=/usr/bin/x86_64-w64-mingw32-gcc.exe -DCMAKE_CXX_COMPILER=/usr/bin/x86_64-w64-mingw32-g++.exe -DCMAKE_Fortran_COMPILER=/usr/bin/x86_64-w64-mingw32-gfortran.exe -DCMAKE_RC_COMPILER=/usr/bin/x86_64-w64-mingw32-windres.exe -DENABLE_OS_SPECIFIC_INSTALL=1 -DENABLE_PETSC=1 -DPETSC_ARCH=real_mumps_seq -DPETSC_DIR=/home/geuzaine/src/petsc ${EXTRA_OPTION} .."
     - c:\cygwin64\bin\bash -c "/usr/bin/make package -j 4"
     - c:\cygwin64\bin\bash -c "/usr/bin/scp -o StrictHostKeyChecking=no -i /home/geuzaine/.ssh/id_rsa gmsh-*.zip geuzaine@gmsh.info:.wwwgmsh/bin/Windows/"
-    - c:\cygwin64\bin\bash -c "/usr/bin/ctest -j 4 --output-on-failure"
+    - c:\cygwin64\bin\bash -c "/usr/bin/ctest -j 4 --timeout 600 --output-on-failure"
 
 windows_official_snapshot:
   <<: *windows_official
@@ -235,7 +235,7 @@ windows-sdk_official_release:
   script:
     - mkdir build
     - cd build
-    - cmake -DGMSH_HOST=gmsh.info -DENABLE_CAIRO=0 -DENABLE_OS_SPECIFIC_INSTALL=1 -DENABLE_PETSC=1 -DPETSC_ARCH=real_mumps_seq -DPETSC_DIR=/Users/geuzaine/src/petsc ${EXTRA_OPTION} ..
+    - cmake -DGMSH_HOST=gmsh.info -DENABLE_OS_SPECIFIC_INSTALL=1 -DENABLE_PETSC=1 -DPETSC_ARCH=real_mumps_seq -DPETSC_DIR=/Users/geuzaine/src/petsc ${EXTRA_OPTION} ..
     - make package -j 4
     - PKG=`ls gmsh-*.[dt][ma][gr]*`
     - '[[ ${PKG} == *.dmg ]] && xcrun notarytool submit ${PKG} --key /Users/geuzaine/AuthKey_4R6P5NYF3T.p8 --key-id 4R6P5NYF3T --issuer 69a6de7c-0b3a-47e3-e053-5b8c7c11a4d1 --wait'
@@ -355,13 +355,13 @@ macosarm-sdk_official_release:
     - docker
 
 source_official_snapshot:
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   <<: *source_official
   except:
     - tags
 
 source_official_release:
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   variables:
     EXTRA_OPTION: "-DGMSH_RELEASE=1"
   <<: *source_official
@@ -374,7 +374,7 @@ source_official_release:
 
 doc_official_snapshot:
   stage: .post
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   only:
     - master@gmsh/gmsh
   <<: *ssh_config
@@ -383,8 +383,9 @@ doc_official_snapshot:
     - cd build_doc
     - cmake ..
     - make doc
-    - scp gmsh-*-doc.tgz geuzaine@gmsh.info:.wwwgmsh/doc.tgz
-    - ssh geuzaine@gmsh.info "cd .wwwgmsh/dev && tar zxvf ../doc.tgz"
+    - scp gmsh-*-doc.tgz geuzaine@gmsh.info:.wwwgmsh/doc/gmsh-git-doc.tgz
+    - ssh geuzaine@gmsh.info "cd .wwwgmsh/dev && tar zxvf ../doc/gmsh-git-doc.tgz"
+    - scp -r ../doc/news/* geuzaine@gmsh.info:.wwwgmsh/news/
   tags:
     - linux64
     - docker
@@ -393,7 +394,7 @@ doc_official_snapshot:
 
 doc_official_release:
   stage: .post
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   only:
     - master@gmsh/gmsh
   <<: *ssh_config
@@ -402,8 +403,9 @@ doc_official_release:
     - cd build_doc
     - cmake -DGMSH_RELEASE=1 ..
     - make doc
-    - scp gmsh-*-doc.tgz geuzaine@gmsh.info:.wwwgmsh/doc.tgz
-    - ssh geuzaine@gmsh.info "cd .wwwgmsh && tar zxvf doc.tgz"
+    - PKG=`ls gmsh-*-doc.tgz`
+    - scp ${PKG} geuzaine@gmsh.info:.wwwgmsh/doc/${PKG}
+    - ssh geuzaine@gmsh.info "cd .wwwgmsh && tar zxvf doc/${PKG}"
     - scp ../doc/gmsh.html ../doc/gmsh.css geuzaine@gmsh.info:.wwwgmsh/
   tags:
     - linux64
@@ -417,7 +419,7 @@ doc_official_release:
 
 doc_cookbook:
   stage: .post
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   only:
     - gmsh/gmsh
   <<: *ssh_config
@@ -434,7 +436,7 @@ doc_cookbook:
 
 pypi_official_snapshot:
   stage: .post
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   only:
     - master@gmsh/gmsh
   <<: *ssh_config
@@ -451,8 +453,14 @@ pypi_official_snapshot:
     - python3 ../utils/pypi/sdktowheel.py _CPack_Packages/CYGWIN/ZIP/gmsh-git-Windows64-sdk/ win_amd64
     - python3 ../utils/pypi/sdktowheel.py _CPack_Packages/Darwin/TGZ/gmsh-git-MacOSX-sdk/ macosx_10_15_x86_64
     - python3 ../utils/pypi/sdktowheel.py _CPack_Packages/Darwin/TGZ/gmsh-git-MacOSARM-sdk/ macosx_12_0_arm64
-    - scp gmsh-*.dev1+nox*.whl geuzaine@gmsh.info:.wwwgmsh/python-packages-dev-nox/gmsh/
-    - scp gmsh-*.dev1-*.whl geuzaine@gmsh.info:.wwwgmsh/python-packages-dev/gmsh/
+    - VERSION=`cat version.txt`
+    # upload the new dated dev wheels first, then prune old versions on the
+    # server, keeping the two most recent ones so an in-progress pip install of
+    # the version being replaced is not broken
+    - scp gmsh-*+nox*.whl geuzaine@gmsh.info:.wwwgmsh/python-packages-dev-nox/gmsh/
+    - scp $(ls gmsh-*.whl | grep -vF +nox) geuzaine@gmsh.info:.wwwgmsh/python-packages-dev/gmsh/
+    - 'ssh geuzaine@gmsh.info "cd .wwwgmsh/python-packages-dev-nox/gmsh && ls gmsh-${VERSION}.dev*.whl 2>/dev/null | sed -E ''s/.*\.dev([0-9]+).*/\1/'' | sort -u | head -n -2 | while read d; do rm -f gmsh-${VERSION}.dev\${d}*.whl; done"'
+    - 'ssh geuzaine@gmsh.info "cd .wwwgmsh/python-packages-dev/gmsh && ls gmsh-${VERSION}.dev*.whl 2>/dev/null | sed -E ''s/.*\.dev([0-9]+).*/\1/'' | sort -u | head -n -2 | while read d; do rm -f gmsh-${VERSION}.dev\${d}*.whl; done"'
   tags:
     - linux64
     - docker
@@ -461,7 +469,7 @@ pypi_official_snapshot:
 
 pypi_official_release:
   stage: .post
-  image: onelab/ubuntu20.04
+  image: onelab/ci
   only:
     - master@gmsh/gmsh
   <<: *ssh_config

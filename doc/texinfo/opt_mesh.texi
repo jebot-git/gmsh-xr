@@ -7,12 +7,17 @@ Default value: @code{6}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.Algorithm3D
-3D mesh algorithm (1: Delaunay, 3: Initial mesh only, 4: Frontal, 7: MMG3D, 9: R-tree, 10: HXT)@*
+3D mesh algorithm (1: Delaunay, 3: Initial mesh only, 4: Frontal, 7: MMG3D, 9: R-tree, 10: HXT, 11: Parallel Delaunay)@*
 Default value: @code{1}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.AlgorithmSwitchOnFailure
 Switch meshing algorithm on failure? (Currently only for 2D Delaunay-based algorithms, switching to MeshAdapt)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.MMG3DCombineDomains
+When Algorithm3D=7 (MMG3D) is used on connected volumes that share an internal interface, run a single combined MMG3D call over the whole group with per-region references instead of one independent call per region (0: independent per-region calls; 1: single combined call)@*
 Default value: @code{1}@*
 Saved in: @code{General.OptionsFileName}
 
@@ -72,7 +77,7 @@ Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.CgnsConstructTopology
-Reconstruct the model topology (BREP) after reading a CGNS file@*
+Reconstruct the model topology (BRep) after reading a CGNS file@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
@@ -94,7 +99,7 @@ Saved in: @code{General.OptionsFileName}
 @item Mesh.Clip
 Enable clipping planes? (Plane[i]=2^i, i=0,...,5)@*
 Default value: @code{0}@*
-Saved in: @code{-}
+Saved in: @code{General.OptionsFileName}
 
 @item Mesh.ColorCarousel
 Mesh coloring (0: by element type, 1: by elementary entity, 2: by physical group, 3: by mesh partition)@*
@@ -121,9 +126,29 @@ Attempt to (re)create the model topology when reading MSH2 files@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
-@item Mesh.DrawSkinOnly
-Draw only the skin of 3D meshes?@*
+@item Mesh.CreateEdges
+Create mesh edges before saving MSH files@*
 Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.CreateFaces
+Create mesh edges before saving MSH files@*
+Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.DrawSkinEdgesOnly
+Draw only the edges of the boundary faces of 3D meshes?@*
+Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.DrawSkinOnly
+Draw only the boundary faces of 3D meshes, entity by entity (1), or with the partitions of an entity together, without the faces between them (2)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.DrawUniqueEdges
+Draw each mesh edge once instead of once per element? (only if Mesh.Explode is 1)@*
+Default value: @code{1}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.Dual
@@ -151,13 +176,28 @@ First tag (>= 1) of mesh nodes when generating or renumbering a mesh@*
 Default value: @code{1}@*
 Saved in: @code{General.OptionsFileName}
 
+@item Mesh.FlatOptimize3D
+Use the flat-array kernel to optimize 3D meshes (set to 0 to use the original object-based kernel, which performs the same operations and gives meshes of the same quality)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.FlatRefine2D
+Kernel used for 2D Delaunay point insertion (0: original object-based kernel; 1: flat-array kernel, which produces the same meshes; 2: flat-array kernel with faster floating-point shortcuts on planar faces and isotropic metrics, which give equivalent but not identical meshes)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.FlatRefine3D
+Use the flat-array kernel for 3D Delaunay point insertion (set to 0 to use the original object-based kernel, which produces the same meshes)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
 @item Mesh.FlexibleTransfinite
 Allow transfinite constraints to be modified for recombination (e.g. Blossom) or by global mesh size factor@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.Format
-Mesh output format (1: msh, 2: unv, 10: auto, 16: vtk, 19: vrml, 21: mail, 26: pos stat, 27: stl, 28: p3d, 30: mesh, 31: bdf, 32: cgns, 33: med, 34: diff, 38: ir3, 39: inp, 40: ply2, 41: celum, 42: su2, 47: tochnog, 49: neu, 50: matlab)@*
+Mesh output format (1: msh, 2: unv, 3: vtu, 10: auto, 16: vtk, 19: vrml, 21: mail, 26: pos stat, 27: stl, 28: p3d, 30: mesh, 31: bdf, 32: cgns, 33: med, 34: diff, 38: ir3, 39: inp, 40: ply2, 41: celum, 42: su2, 47: tochnog, 49: neu, 50: matlab, 51: key, 55: rad, 57: obj)@*
 Default value: @code{10}@*
 Saved in: @code{General.OptionsFileName}
 
@@ -258,6 +298,16 @@ Saved in: @code{General.OptionsFileName}
 
 @item Mesh.IgnoreUnknownSections
 Skip unknown sections when reading meshes in the MSH4 format (otherwise the contents of these sections are stored as model attributes)@*
+Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.IgnoreEdges
+Skip the edges section when reading meshes in the MSH4 format@*
+Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.IgnoreFaces
+Skip the faces section when reading meshes in the MSH4 format@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
@@ -392,8 +442,8 @@ Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.MetisAlgorithm
-METIS partitioning algorithm 'ptype' (1: Recursive, 2: K-way)@*
-Default value: @code{1}@*
+METIS partitioning algorithm 'ptype' (1: Recursive, 2: K-way, 3: Multithreaded k-way with mt-metis, if available)@*
+Default value: @code{2}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.MetisEdgeMatching
@@ -443,7 +493,7 @@ Saved in: @code{General.OptionsFileName}
 
 @item Mesh.MshFileVersion
 Version of the MSH file format to use@*
-Default value: @code{4.1}@*
+Default value: @code{4.2}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.MedFileMinorVersion
@@ -460,6 +510,16 @@ Saved in: @code{General.OptionsFileName}
 Import MED meshes in the current model, even if several MED mesh names exist@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
+
+@item Mesh.NbEdges
+Number of edges of the current mesh, when they have been created or read (Mesh.CreateEdges) (read-only)@*
+Default value: @code{0}@*
+Saved in: @code{-}
+
+@item Mesh.NbFaces
+Number of faces of the current mesh, when they have been created or read (Mesh.CreateFaces) (read-only)@*
+Default value: @code{0}@*
+Saved in: @code{-}
 
 @item Mesh.NbHexahedra
 Number of hexahedra in the current mesh (read-only)@*
@@ -478,6 +538,16 @@ Saved in: @code{General.OptionsFileName}
 
 @item Mesh.NbPrisms
 Number of prisms in the current mesh (read-only)@*
+Default value: @code{0}@*
+Saved in: @code{-}
+
+@item Mesh.NbPolygons
+Number of polygons in the current mesh (read-only)@*
+Default value: @code{0}@*
+Saved in: @code{-}
+
+@item Mesh.NbPolyhedra
+Number of polyhedra in the current mesh (read-only)@*
 Default value: @code{0}@*
 Saved in: @code{-}
 
@@ -546,6 +616,16 @@ Use old initial 2D Delaunay code@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
+@item Mesh.Opacity
+Opacity factor applied to all mesh colors (1: opaque, 0: fully transparent)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.OpacityMode
+Apply Mesh.Opacity to (0: filled surfaces only; 1: everything)@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
 @item Mesh.Optimize
 Optimize the mesh to improve the quality of tetrahedral elements@*
 Default value: @code{1}@*
@@ -564,6 +644,21 @@ Saved in: @code{General.OptionsFileName}
 @item Mesh.OptimizePyramids
 Optimize pyramids in hybrid 3D meshes (0: smoother; 1: untangler)@*
 Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.OptimizeReconnectionPoints
+Maximum number of nodes of the cavity that the parallel 3D optimizer reconnects around a tetrahedron it could not improve otherwise (5 to 32; below 5: no reconnection)@*
+Default value: @code{16}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.OptimizeReconnectionSearch
+Maximum number of tetrahedra placed by the search for a better reconnection of a cavity@*
+Default value: @code{200}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.OptimizeReconnectionThreshold
+Reconnect the tetrahedra that the parallel 3D optimizer could not improve otherwise and whose quality is below this fraction of Mesh.OptimizeThreshold (0: no reconnection; 1: all of them)@*
+Default value: @code{0.5}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.PartitionHexWeight
@@ -623,6 +718,11 @@ Saved in: @code{General.OptionsFileName}
 
 @item Mesh.PartitionSplitMeshFiles
 Write one file for each mesh partition@*
+Default value: @code{0}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.PartitionSplitLocalBrep
+Only export the subset of the topology (BRep) that is relevant when splitting mesh files per partition@*
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
@@ -826,6 +926,11 @@ Save model topology in MSH2 output files (this is always saved in MSH3 and above
 Default value: @code{0}@*
 Saved in: @code{General.OptionsFileName}
 
+@item Mesh.SaveViews
+Save post-processing views with the mesh in MSH, MED and VTU files (0: none, 1: visible views, 2: all views): the views based on the model with its mesh, and in MSH and VTU the list-based views (in `name_views.msh' or `name_views.vtu' if the model has a mesh)@*
+Default value: @code{0}@*
+Saved in: @code{-}
+
 @item Mesh.ScalingFactor
 Global scaling factor applied to the saved mesh@*
 Default value: @code{1}@*
@@ -951,6 +1056,16 @@ Display mesh trihedra?@*
 Default value: @code{1}@*
 Saved in: @code{General.OptionsFileName}
 
+@item Mesh.Polygons
+Display mesh polygons?@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.Polyhedra
+Display mesh polyhedra?@*
+Default value: @code{1}@*
+Saved in: @code{General.OptionsFileName}
+
 @item Mesh.TransfiniteTri
 Use alternative transfinite arrangement when meshing 3-sided surfaces@*
 Default value: @code{0}@*
@@ -1034,6 +1149,16 @@ Saved in: @code{General.OptionsFileName}
 @item Mesh.Color.Trihedra
 Mesh trihedron color (if Mesh.ColorCarousel=0)@*
 Default value: @code{@{20,255,0@}}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.Color.Polygons
+Mesh polygon color (if Mesh.ColorCarousel=0)@*
+Default value: @code{@{160,150,255@}}@*
+Saved in: @code{General.OptionsFileName}
+
+@item Mesh.Color.Polyhedra
+Mesh polyhedron color (if Mesh.ColorCarousel=0)@*
+Default value: @code{@{130,120,225@}}@*
 Saved in: @code{General.OptionsFileName}
 
 @item Mesh.Color.Tangents

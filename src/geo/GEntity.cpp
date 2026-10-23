@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -15,11 +15,60 @@
 #include "GFace.h"
 #include "GRegion.h"
 #include "closestVertex.h"
+#include "GmshConfig.h"
+#include "OwnerCache.h"
+
+int GEntity::numSelected = 0;
+std::set<GEntity *> GEntity::selected;
+
+void GEntity::setSelection(char val)
+{
+  if(!_selection != !val) {
+    numSelected += val ? 1 : -1;
+    if(val)
+      selected.insert(this);
+    else
+      selected.erase(this);
+  }
+  _selection = val;
+}
+// The flags are raised only on an actual change.
+void GEntity::setVisibility(char val, bool recursive)
+{
+  if(_visible != val) CTX::instance()->entityVisibilityChanged();
+  _visible = val;
+}
+
+// Derived from the visibility of the elements when the mesh arrays are
+// filled, and what depends on it is filled again with them: raising the flag
+// here asked for the arrays to be filled again once more.
+void GEntity::setOnlySomeElementsVisible(bool val)
+{
+  _onlySomeElementsVisible = val ? 1 : 0;
+}
+
+void GEntity::setColor(unsigned color, bool recursive)
+{
+  if(_color != color) CTX::instance()->entityColorsChanged();
+  _color = color;
+}
+
+GEntity::~GEntity()
+{
+  // a selected entity that goes is no longer selected
+  if(_selection) {
+    numSelected--;
+    selected.erase(this);
+  }
+  // what the drawing keeps for this entity goes with it
+  OwnerCacheBase::release(this);
+}
 
 GEntity::GEntity(GModel *m, int t)
   : _model(m), _tag(t), _meshMaster(this), _visible(1), _selection(0),
     _onlySomeElementsVisible(1), _obb(nullptr), va_lines(nullptr),
-    va_triangles(nullptr)
+    va_triangles(nullptr), va_clip_lines(nullptr),
+    va_clip_triangles(nullptr)
 {
   // default color when none is explicitly specified - don't change this, as it
   // is documented and used in scripts to detect if explicit colors are set
@@ -33,12 +82,20 @@ void GEntity::deleteVertexArrays()
   va_lines = nullptr;
   if(va_triangles) delete va_triangles;
   va_triangles = nullptr;
+  deleteClipVertexArrays();
+}
+
+void GEntity::deleteClipVertexArrays()
+{
+  if(va_clip_lines) delete va_clip_lines;
+  va_clip_lines = nullptr;
+  if(va_clip_triangles) delete va_clip_triangles;
+  va_clip_triangles = nullptr;
 }
 
 char GEntity::getVisibility()
 {
-  if(CTX::instance()->hideUnselected && !CTX::instance()->pickElements &&
-     !getSelection())
+  if(CTX::instance()->hideUnselected && !getSelection())
     return false;
   return _visible;
 }
@@ -200,47 +257,44 @@ void GEntity::addVerticesInSet(std::set<MVertex *> &vtcs, bool closure) const
   }
 }
 
-void GEntity::updateCorrespondingVertices()
+bool GEntity::updateCorrespondingVertices(double tolerance)
 {
-  if(_meshMaster != this && affineTransform.size() == 16) {
-    correspondingVertices.clear();
-    closestVertexFinder cvf(_meshMaster, true);
+  if(_meshMaster == this || affineTransform.size() != 16) return true;
+  correspondingVertices.clear();
+  closestVertexFinder cvf(_meshMaster, true);
+  if(!cvf.getNbVtcs()) return true;
 
-    if(cvf.getNbVtcs()) {
-      std::vector<double> tfo = affineTransform;
-      std::vector<double> inv;
-      invertAffineTransformation(tfo, inv);
+  const std::vector<double> &tfo = affineTransform;
+  std::vector<double> inv;
+  invertAffineTransformation(tfo, inv);
 
-      std::set<MVertex *> vtcs;
-      this->addVerticesInSet(vtcs, true);
+  std::set<MVertex *> vtcs;
+  addVerticesInSet(vtcs, true);
 
-      auto vIter = vtcs.begin();
-      for(; vIter != vtcs.end(); ++vIter) {
-        MVertex *tv = *vIter;
-        // double tgt[4] = {tv->x(),tv->y(),tv->z(),1};
-        // double xyz[4] = {0,0,0,0};
-
-        // int idx = 0;
-        // for (int i=0;i<3;i++) for (int j=0;j<4;j++) tgt[i] += inv[idx++] *
-        // ori[j];
-        MVertex *sv = cvf(tv->point(), inv);
-
-        correspondingVertices[tv] = sv;
-
-        double src[4] = {sv->x(), sv->y(), sv->z(), 1};
-        double xyz[4] = {0, 0, 0, 0};
-        int idx = 0;
-        for(int i = 0; i < 3; i++) {
-          xyz[i] = 0;
-          for(int j = 0; j < 4; j++) xyz[i] += tfo[idx++] * src[j];
-        }
-
-        tv->x() = xyz[0];
-        tv->y() = xyz[1];
-        tv->z() = xyz[2];
-      }
-    }
+  // the image of the closest master node of each node
+  std::vector<std::pair<MVertex *, MVertex *>> pairs;
+  std::vector<SPoint3> images;
+  for(MVertex *tv : vtcs) {
+    MVertex *sv = cvf(tv->point(), inv);
+    double src[4] = {sv->x(), sv->y(), sv->z(), 1};
+    double xyz[3] = {0, 0, 0};
+    int idx = 0;
+    for(int i = 0; i < 3; i++)
+      for(int j = 0; j < 4; j++) xyz[i] += tfo[idx++] * src[j];
+    SPoint3 image(xyz[0], xyz[1], xyz[2]);
+    if(tolerance >= 0 && image.distance(tv->point()) > tolerance) return false;
+    pairs.push_back(std::make_pair(tv, sv));
+    images.push_back(image);
   }
+
+  for(std::size_t i = 0; i < pairs.size(); i++) {
+    MVertex *tv = pairs[i].first;
+    correspondingVertices[tv] = pairs[i].second;
+    tv->x() = images[i].x();
+    tv->y() = images[i].y();
+    tv->z() = images[i].z();
+  }
+  return true;
 }
 
 void GEntity::copyMasterCoordinates()

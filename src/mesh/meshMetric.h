@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -14,7 +14,6 @@
 
 template <class scalar> class simpleFunction;
 class MVertex;
-class gLevelset;
 class MElementOctree;
 class STensor3;
 
@@ -22,7 +21,6 @@ class STensor3;
 class meshMetric : public Field {
 public:
   typedef enum {
-    LEVELSET = 1,
     HESSIAN = 2,
     FREY = 3,
     EIGENDIRECTIONS = 4,
@@ -110,9 +108,6 @@ public:
   void scaleMetric(int nbElementsTarget, nodalMetricTensor &nmt);
 
   void computeMetric(int metricNumber);
-  void computeMetricLevelSet(MVertex *ver, SMetric3 &hessian, SMetric3 &metric,
-                             double &size, double x = 0.0, double y = 0.0,
-                             double z = 0.0);
   void computeMetricHessian(MVertex *ver, SMetric3 &hessian, SMetric3 &metric,
                             double &size, double x = 0.0, double y = 0.0,
                             double z = 0.0);

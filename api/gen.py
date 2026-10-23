@@ -1,4 +1,4 @@
-# Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+# Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 #
 # See the LICENSE.txt file in the Gmsh root directory for license information.
 # Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -82,7 +82,7 @@ option.add('setString', doc, None, istring('name'), istring('value'))
 doc = '''Get the `value' of a string option. `name' is of the form "Category.Option" or "Category[num].Option". Available categories and options are listed in the "Gmsh options" chapter of the Gmsh reference manual (https://gmsh.info/doc/texinfo/gmsh.html#Gmsh-options).'''
 option.add('getString', doc, None, istring('name'), ostring('value'))
 
-doc = '''Set a color option to the RGBA value (`r', `g', `b', `a'), where where `r', `g', `b' and `a' should be integers between 0 and 255. `name' is of the form "Category.Color.Option" or "Category[num].Color.Option". Available categories and options are listed in the "Gmsh options" chapter of the Gmsh reference manual (https://gmsh.info/doc/texinfo/gmsh.html#Gmsh-options). For conciseness "Color." can be ommitted in `name'.'''
+doc = '''Set a color option to the RGBA value (`r', `g', `b', `a'), where `r', `g', `b' and `a' should be integers between 0 and 255. `name' is of the form "Category.Color.Option" or "Category[num].Color.Option". Available categories and options are listed in the "Gmsh options" chapter of the Gmsh reference manual (https://gmsh.info/doc/texinfo/gmsh.html#Gmsh-options). For conciseness "Color." can be ommitted in `name'.'''
 option.add('setColor', doc, None, istring('name'), iint('r'), iint('g'), iint('b'), iint('a', '255'))
 
 doc = '''Get the `r', `g', `b', `a' value of a color option. `name' is of the form "Category.Color.Option" or "Category[num].Color.Option". Available categories and options are listed in the "Gmsh options" chapter of the Gmsh reference manual (https://gmsh.info/doc/texinfo/gmsh.html#Gmsh-options). For conciseness "Color." can be ommitted in `name'.'''
@@ -275,11 +275,32 @@ mesh.add('generate', doc, None, iint('dim', '3'))
 doc = '''Partition the mesh of the current model into `numPart' partitions. Optionally, `elementTags' and `partitions' can be provided to specify the partition of each element explicitly.'''
 mesh.add('partition', doc, None, iint('numPart'), ivectorsize('elementTags', 'std::vector<std::size_t>()','[]', '[]'), ivectorint('partitions', 'std::vector<int>()','[]', '[]'))
 
+doc = '''Generate node-based overlaps (of highest dimension) for all partitions, with a number of layers equal to `layers'. The overlaps of the bounding entities (i.e. "boundary overlaps") and the inner boundaries of the overlaps (i.e. "overlap boundaries") are always built: the `createBoundaries' flag is currently ignored. Return the index of the newly created overlap group, which can be passed as `overlapIndex' to the query functions (indices are assigned sequentially from 0, so the index is also the position of the group).'''
+mesh.add('createOverlaps', doc, oint, iint('layers', '1'), ibool('createBoundaries', 'true', 'True'))
+
+doc = '''Get the tags of the partitioned entities of dimension `dim' whose parent has dimension `dim' and tag `tag', and which belong to the partition `partition'. If overlaps are present, fill `overlapEntities' with the tags of the entities that are in the overlap of the partition. Works for entities of the same dimension as the model as well as for entities one dimension below (boundary overlaps). `overlapIndex' selects which overlap group to query (as returned by `createOverlaps').'''
+mesh.add('getPartitionEntities', doc, None, iint('dim'), iint('tag'), iint('partition'), ovectorint('entityTags'), ovectorint('overlapEntities'), iint('overlapIndex', '0'))
+
+doc = '''Get the tags of the entities making up the overlap boundary of partition `partition' inside the (non-partitioned) entity of dimension `dim' and tag `tag'. Only the plain inner boundaries are returned: the inner boundaries lying on an internal interface are a distinct class, queried with `getOverlapInterfaceBoundary'. A solver imposing a transmission condition on the whole rim of an overlap patch must therefore combine both. `overlapIndex' selects which overlap group to query.'''
+mesh.add('getOverlapBoundary', doc, None, iint('dim'), iint('tag'), iint('partition'), ovectorint('entityTags'), iint('overlapIndex', '0'))
+
+doc = '''Get the tags of the overlap boundary entities of partition `partition' that lie on the internal interface entity of dimension `dim' and tag `tag' (a dim-1 entity of the model shared by two entities of dimension `dim'+1). These boundaries are artificial (the domain continues on the other side of the interface) and carry a transmission condition, but keep the interface identity so an interface-aware condition can be imposed. Note that `dim' is the dimension of the interface, one below the model dimension, unlike `getOverlapBoundary' which takes the parent entity. `overlapIndex' selects which overlap group to query.'''
+mesh.add('getOverlapInterfaceBoundary', doc, None, iint('dim'), iint('tag'), iint('partition'), ovectorint('entityTags'), iint('overlapIndex', '0'))
+
+doc = '''If the entity of dimension `dim' and tag `tag' is a boundary overlap, get the entity of dimension `dim+1' that created it. Sets `parentTag' to -1 on error. `overlapIndex' selects which overlap group to query.'''
+mesh.add('getBoundaryOverlapParent', doc, None, iint('dim'), iint('tag'), oint('parentTag'), iint('overlapIndex', '0'))
+
+doc = '''If the entity of dimension `dim' and tag `overlapTag' is a highest-dimensional overlap entity (OverlapSurface or OverlapVolume), set `overlappedEntityTag' to the tag of the partition entity whose elements it covers. This covered partition entity belongs to a partition different from the partition owning the overlap. For a boundary overlap that extends an existing model boundary, or an inner overlap boundary lying on an internal interface, set `overlappedEntityTag' to the tag of the underlying boundary or interface entity. A plain inner overlap boundary has no underlying same-dimensional entity and returns -1. Set `overlappedEntityTag' to -1 if the entity is not an overlap. `overlapIndex' selects which overlap group to query.'''
+mesh.add('getOverlapOverlappedEntity', doc, None, iint('dim'), iint('overlapTag'), oint('overlappedEntityTag'), iint('overlapIndex', '0'))
+
 doc = '''Unpartition the mesh of the current model.'''
 mesh.add('unpartition', doc, None)
 
-doc = '''Optimize the mesh of the current model using `method' (empty for default tetrahedral mesh optimizer, "Netgen" for Netgen optimizer, "HighOrder" for direct high-order mesh optimizer, "HighOrderElastic" for high-order elastic smoother, "HighOrderFastCurving" for fast curving algorithm, "Laplace2D" for Laplace smoothing, "Relocate2D" and "Relocate3D" for node relocation, "QuadQuasiStructured" for quad mesh optimization, "UntangleMeshGeometry" for untangling). If `force' is set apply the optimization also to discrete entities. If `dimTags' (given as a vector of (dim, tag) pairs) is given, only apply the optimizer to the given entities.'''
-mesh.add('optimize', doc, None, istring('method', '""'), ibool('force', 'false', 'False'), iint('niter', '1'), ivectorpair('dimTags', 'gmsh::vectorpair()', '[]', '[]'))
+doc = '''Write selected partitions of the mesh into a single file `fileName'. The export format is MSH4. The `partitions' vector specifies which partition numbers to include.'''
+mesh.add('writePartitions', doc, None, istring('fileName'), ivectorint('partitions'))
+
+doc = '''Optimize the mesh of the current model using `method' (empty for default tetrahedral mesh optimizer, "Netgen" for Netgen optimizer, "HighOrder" for direct high-order mesh optimizer, "HighOrderElastic" for high-order elastic smoother, "HighOrderFastCurving" for fast curving algorithm, "Laplace2D" for Laplace smoothing, "Relocate2D" and "Relocate3D" for node relocation, "QuadQuasiStructured" for quad mesh optimization, "UntangleMeshGeometry" for untangling, "HXT" for tetrahedral optimisation). If `force' is set apply the optimization also to discrete entities. If `dimTags' (given as a vector of (dim, tag) pairs) is given, only apply the optimizer to the given entities. For HXT optimizer, the `quality' argument should be specified'''
+mesh.add('optimize', doc, None, istring('method', '""'), ibool('force', 'false', 'False'), iint('niter', '1'), ivectorpair('dimTags', 'gmsh::vectorpair()', '[]', '[]'), idouble('quality', '0.0'))
 
 doc = '''Recombine the mesh of the current model.'''
 mesh.add('recombine', doc, None)
@@ -323,6 +344,9 @@ mesh.add('getNode', doc, None, isize('nodeTag'), ovectordouble('coord'), ovector
 doc = '''Set the coordinates and the parametric coordinates (if any) of the node with tag `tag'. This function relies on an internal cache (a vector in case of dense node numbering, a map otherwise); for large meshes accessing nodes in bulk is often preferable.'''
 mesh.add('setNode', doc, None, isize('nodeTag'), ivectordouble('coord'), ivectordouble('parametricCoord'))
 
+doc = '''Set the coordinates and the parametric coordinates (if any) of the nodes with tags `nodeTags'. `coord' is a vector of length 3 times the length of `nodeTags' that contains the x, y, z coordinates of the nodes, concatenated: [n1x, n1y, n1z, n2x, ...]. If `dim' >= 0, the nodes must be classified on an entity of dimension `dim' (and of tag `tag' if `tag' >= 0), and the length of `parametricCoord' can be 0 or `dim' times the length of `nodeTags'. If `dim' < 0 the nodes can be classified anywhere, and `parametricCoord' must be empty.'''
+mesh.add('setNodes', doc, None, ivectorsize('nodeTags'), ivectordouble('coord'), ivectordouble('parametricCoord'), iint('dim', '-1'), iint('tag', '-1'))
+
 doc = '''Rebuild the node cache.'''
 mesh.add('rebuildNodeCache', doc, None, ibool('onlyIfNecessary', 'true', 'True'))
 
@@ -341,8 +365,8 @@ mesh.add('addNodes', doc, None, iint('dim'), iint('tag'), ivectorsize('nodeTags'
 doc = '''Reclassify all nodes on their associated model entity, based on the elements. Can be used when importing nodes in bulk (e.g. by associating them all to a single volume), to reclassify them correctly on model surfaces, curves, etc. after the elements have been set.'''
 mesh.add('reclassifyNodes', doc, None)
 
-doc = '''Relocate the nodes classified on the entity of dimension `dim' and tag `tag' using their parametric coordinates. If `tag' < 0, relocate the nodes for all entities of dimension `dim'. If `dim' and `tag' are negative, relocate all the nodes in the mesh.'''
-mesh.add('relocateNodes', doc, None, iint('dim', '-1'), iint('tag', '-1'))
+doc = '''Relocate the nodes classified on the entity of dimension `dim' and tag `tag' using their parametric coordinates. If `tag' < 0, relocate the nodes for all entities of dimension `dim'. If `dim' and `tag' are negative, relocate all the nodes in the mesh. Optional `min' and `max' vectors (of length == `dim') can be provided to linearly rescale each parametric coordinate in the new parameter range, based on the provided one.'''
+mesh.add('relocateNodes', doc, None, iint('dim', '-1'), iint('tag', '-1'), ivectordouble('min', 'std::vector<double>()', '[]', '[]'), ivectordouble('max', 'std::vector<double>()', '[]', '[]'))
 
 doc = '''Get the elements classified on the entity of dimension `dim' and tag `tag'. If `tag' < 0, get the elements for all entities of dimension `dim'. If `dim' and `tag' are negative, get all the elements in the mesh. `elementTypes' contains the MSH types of the elements (e.g. `2' for 3-node triangles: see `getElementProperties' to obtain the properties for a given element type). `elementTags' is a vector of the same length as `elementTypes'; each entry is a vector containing the tags (unique, strictly positive identifiers) of the elements of the corresponding type. `nodeTags' is also a vector of the same length as `elementTypes'; each entry is a vector of length equal to the number of elements of the given type times the number N of nodes for this type of element, that contains the node tags of all the elements of the given type, concatenated: [e1n1, e1n2, ..., e1nN, e2n1, ...].'''
 mesh.add('getElements', doc, None, ovectorint('elementTypes'), ovectorvectorsize('elementTags'), ovectorvectorsize('nodeTags'), iint('dim', '-1'), iint('tag', '-1'))
@@ -365,7 +389,7 @@ mesh.add('getElementTypes', doc, None, ovectorint('elementTypes'), iint('dim', '
 doc = '''Return an element type given its family name `familyName' ("Point", "Line", "Triangle", "Quadrangle", "Tetrahedron", "Pyramid", "Prism", "Hexahedron") and polynomial order `order'. If `serendip' is true, return the corresponding serendip element type (element without interior nodes).'''
 mesh.add('getElementType', doc, oint, istring('familyName'), iint('order'), ibool('serendip', 'false', 'False'))
 
-doc = '''Get the properties of an element of type `elementType': its name (`elementName'), dimension (`dim'), order (`order'), number of nodes (`numNodes'), local coordinates of the nodes in the reference element (`localNodeCoord' vector, of length `dim' times `numNodes') and number of primary (first order) nodes (`numPrimaryNodes').'''
+doc = '''Get the properties of an element of type `elementType': its name (`elementName'), dimension (`dim'), order (`order'), number of nodes (`numNodes'), local coordinates of the nodes in the reference element (`localNodeCoord' vector, of length `dim' times `numNodes') and number of primary (first order) nodes (`numPrimaryNodes'). Polygons and polyhedra have no reference element and a variable number of nodes: `numNodes' and `numPrimaryNodes' are -1 and `localNodeCoord' is empty.'''
 mesh.add('getElementProperties', doc, None, iint('elementType'), ostring('elementName'), oint('dim'), oint('order'), oint('numNodes'), ovectordouble('localNodeCoord'), oint('numPrimaryNodes'))
 
 doc = '''Get the elements of type `elementType' classified on the entity of tag `tag'. If `tag' < 0, get the elements for all entities. `elementTags' is a vector containing the tags (unique, strictly positive identifiers) of the elements of the corresponding type. `nodeTags' is a vector of length equal to the number of elements of the given type times the number N of nodes for this type of element, that contains the node tags of all the elements of the given type, concatenated: [e1n1, e1n2, ..., e1nN, e2n1, ...]. If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vectors must be preallocated).'''
@@ -386,6 +410,27 @@ mesh.add('addElements', doc, None, iint('dim'), iint('tag'), ivectorint('element
 doc = '''Add elements of type `elementType' classified on the entity of tag `tag'. `elementTags' contains the tags (unique, strictly positive identifiers) of the elements of the corresponding type. `nodeTags' is a vector of length equal to the number of elements times the number N of nodes per element, that contains the node tags of all the elements, concatenated: [e1n1, e1n2, ..., e1nN, e2n1, ...]. If the `elementTag' vector is empty, new tags are automatically assigned to the elements.'''
 mesh.add('addElementsByType', doc, None, iint('tag'), iint('elementType'), ivectorsize('elementTags'), ivectorsize('nodeTags'))
 
+doc = '''Add polygons classified on the surface `tag'. `elementTags' contains the tags (unique, strictly positive identifiers) of the polygons; if empty, new tags are assigned automatically. `nodeTags' contains the tags of the boundary nodes of all the polygons, concatenated, and `numNodes' the number of boundary nodes of each polygon. The nodes of a polygon must be ordered along its boundary; hanging nodes are boundary nodes. A sub-triangulation can be given with `setPolytopeSimplices'.'''
+mesh.add('addPolygons', doc, None, iint('tag'), ivectorsize('elementTags'), ivectorsize('nodeTags'), ivectorint('numNodes'))
+
+doc = '''Get the polygons classified on the surface `tag': their tags `elementTags', the tags of their boundary nodes concatenated in `nodeTags', and the number of boundary nodes `numNodes' of each polygon. If `tag' < 0, get the polygons of all the surfaces.'''
+mesh.add('getPolygons', doc, None, ovectorsize('elementTags'), ovectorsize('nodeTags'), ovectorint('numNodes'), iint('tag', '-1'))
+
+doc = '''Add polyhedra classified on the volume `tag'. `elementTags' contains the tags (unique, strictly positive identifiers) of the polyhedra; if empty, new tags are assigned automatically. `numFaces' contains the number of faces of each polyhedron, `faceSizes' the number of nodes of each face, and `nodeTags' the tags of the nodes of all the faces, concatenated. A sub-tetrahedralization can be given with `setPolytopeSimplices'.'''
+mesh.add('addPolyhedra', doc, None, iint('tag'), ivectorsize('elementTags'), ivectorint('numFaces'), ivectorint('faceSizes'), ivectorsize('nodeTags'))
+
+doc = '''Get the polyhedra classified on the volume `tag': their tags `elementTags', the number of faces `numFaces' of each polyhedron, the number of nodes `faceSizes' of each face, and the tags of the nodes of all the faces concatenated in `nodeTags'. If `tag' < 0, get the polyhedra of all the volumes.'''
+mesh.add('getPolyhedra', doc, None, ovectorsize('elementTags'), ovectorint('numFaces'), ovectorint('faceSizes'), ovectorsize('nodeTags'), iint('tag', '-1'))
+
+doc = '''Get the simplices (triangles for polygons, tetrahedra for polyhedra) subdividing the polytopes of type `elementType' (34 for polygons, 35 for polyhedra) classified on the entity of tag `tag': the tags of the polytopes `elementTags', the number of simplices `numSimplices' of each polytope, and the tags of the nodes of all the simplices concatenated in `nodeTags'. The nodes of the simplices that are not boundary nodes of a polytope are its hanging or interior nodes. If the simplices of a polytope were neither given (in the mesh file or with `setPolytopeSimplices') nor created (with `createPolytopeSimplices'), they are computed on the fly and not saved with the mesh; `given' tells for each polytope if its simplices are saved with the mesh. If `tag' < 0, get the simplices of the polytopes of all the entities.'''
+mesh.add('getPolytopeSimplices', doc, None, iint('elementType'), ovectorsize('elementTags'), ovectorint('numSimplices'), ovectorsize('nodeTags'), ovectorint('given'), iint('tag', '-1'))
+
+doc = '''Set the simplices (triangles for polygons, tetrahedra for polyhedra) subdividing the polytopes `elementTags': `numSimplices' contains the number of simplices of each polytope, and `nodeTags' the tags of the nodes of all the simplices, concatenated. The nodes of the simplices that are not boundary nodes of a polytope become its hanging or interior nodes. The simplices are saved with the mesh.'''
+mesh.add('setPolytopeSimplices', doc, None, ivectorsize('elementTags'), ivectorint('numSimplices'), ivectorsize('nodeTags'))
+
+doc = '''Create the simplices subdividing the polytopes classified on the entities `dimTags' (given as a vector of (dim, tag) pairs), or on all the entities if `dimTags' is empty, when none were given: polygons are triangulated by ear clipping, and polyhedra are tetrahedralized as a fan from their first node (which is only correct if the polyhedron is star-shaped with respect to it). The simplices are then saved with the mesh.'''
+mesh.add('createPolytopeSimplices', doc, None, ivectorpair('dimTags', 'gmsh::vectorpair()', '[]', '[]'))
+
 doc = '''Get the numerical quadrature information for the given element type `elementType' and integration rule `integrationType', where `integrationType' concatenates the integration rule family name with the desired order (e.g. "Gauss4" for a quadrature suited for integrating 4th order polynomials). The "CompositeGauss" family uses tensor-product rules based the 1D Gauss-Legendre rule; the "Gauss" family uses an economic scheme when available (i.e. with a minimal number of points), and falls back to "CompositeGauss" otherwise. Note that integration points for the "Gauss" family can fall outside of the reference element for high-order rules. `localCoord' contains the u, v, w coordinates of the G integration points in the reference element: [g1u, g1v, g1w, ..., gGu, gGv, gGw]. `weights' contains the associated weights: [g1q, ..., gGq].'''
 mesh.add('getIntegrationPoints', doc, None, iint('elementType'), istring('integrationType'), ovectordouble('localCoord'), ovectordouble('weights'))
 
@@ -398,14 +443,14 @@ mesh.add_special('preallocateJacobians', doc, ['onlycc++'], None, iint('elementT
 doc = '''Get the Jacobian for a single element `elementTag', at the G evaluation points `localCoord' given as concatenated u, v, w coordinates in the reference element [g1u, g1v, g1w, ..., gGu, gGv, gGw]. `jacobians' contains the 9 entries of the 3x3 Jacobian matrix at each evaluation point. The matrix is returned by column: [e1g1Jxu, e1g1Jyu, e1g1Jzu, e1g1Jxv, ..., e1g1Jzw, e1g2Jxu, ..., e1gGJzw, e2g1Jxu, ...], with Jxu = dx/du, Jyu = dy/du, etc. `determinants' contains the determinant of the Jacobian matrix at each evaluation point. `coord' contains the x, y, z coordinates of the evaluation points. This function relies on an internal cache (a vector in case of dense element numbering, a map otherwise); for large meshes accessing Jacobians in bulk is often preferable.'''
 mesh.add('getJacobian', doc, None, isize('elementTag'), ivectordouble('localCoord'), ovectordouble('jacobians'), ovectordouble('determinants'), ovectordouble('coord'))
 
-doc = '''Get the basis functions of the element of type `elementType' at the evaluation points `localCoord' (given as concatenated u, v, w coordinates in the reference element [g1u, g1v, g1w, ..., gGu, gGv, gGw]), for the function space `functionSpaceType'. Currently supported function spaces include "Lagrange" and "GradLagrange" for isoparametric Lagrange basis functions and their gradient in the u, v, w coordinates of the reference element; "LagrangeN" and "GradLagrangeN", with N = 1, 2, ..., for N-th order Lagrange basis functions; "H1LegendreN" and "GradH1LegendreN", with N = 1, 2, ..., for N-th order hierarchical H1 Legendre functions; "HcurlLegendreN" and "CurlHcurlLegendreN", with N = 1, 2, ..., for N-th order curl-conforming basis functions. `numComponents' returns the number C of components of a basis function (e.g. 1 for scalar functions and 3 for vector functions). `basisFunctions' returns the value of the N basis functions at the evaluation points, i.e. [g1f1, g1f2, ..., g1fN, g2f1, ...] when C == 1 or [g1f1u, g1f1v, g1f1w, g1f2u, ..., g1fNw, g2f1u, ...] when C == 3. For basis functions that depend on the orientation of the elements, all values for the first orientation are returned first, followed by values for the second, etc. `numOrientations' returns the overall number of orientations. If the `wantedOrientations' vector is not empty, only return the values for the desired orientation indices.'''
+doc = '''Get the basis functions of the element of type `elementType' at the evaluation points `localCoord' (given as concatenated u, v, w coordinates in the reference element [g1u, g1v, g1w, ..., gGu, gGv, gGw]), for the function space `functionSpaceType'. Currently supported function spaces include "Lagrange" and "GradLagrange" for isoparametric Lagrange basis functions and their gradient in the u, v, w coordinates of the reference element; "LagrangeN" and "GradLagrangeN", with N = 1, 2, ..., for N-th order Lagrange basis functions; "H1LegendreN" and "GradH1LegendreN", with N = 1, 2, ..., for N-th order hierarchical H1 Legendre functions; "HcurlLegendreN" and "CurlHcurlLegendreN", with N = 0, 1, ..., for N-th order curl-conforming basis functions, and their parts "HcurlLegendreGradN" (the gradients of the edge, face and bubble functions of "H1Legendre(N+1)") and "HcurlLegendreNoGradN" (the other functions): "HcurlLegendre0" gives the lowest order (Whitney) functions, "HcurlLegendre1" the full first order functions, "HcurlLegendreNoGrad2" with "HcurlLegendreGrad1" the incomplete second order functions (Nedelec of the first kind on simplices), and "HcurlLegendre2" the full second order functions, i.e. orders 0.5, 1, 1.5 and 2 in GetDP, and so on; "HdivLegendreN" and "DivHdivLegendreN", with N = 0, 1, ..., for N-th order div-conforming basis functions, and their parts "HdivLegendreCurlN" (the divergence-free functions) and "HdivLegendreNoCurlN" (the other functions), except on prisms; "L2LegendreN", with N = 0, 1, ..., for N-th order discontinuous basis functions, which span the divergences of the div-conforming functions. For all these hierarchical function spaces, the order N is that of the space, i.e. all the functions up to order N, and can be replaced by a range M:N to only keep the functions of orders M to N (the order of each function being that given by `getKeysInformation'): e.g. "HcurlLegendre1:1", "HcurlLegendreNoGrad2:2" and "HcurlLegendreGrad2:2" are the functions added by the orders 1, 1.5 and 2 of GetDP above. The parts and ranges of a space have the keys of the space. `numComponents' returns the number C of components of a basis function (e.g. 1 for scalar functions and 3 for vector functions). `basisFunctions' returns the value of the N basis functions at the evaluation points, i.e. [g1f1, g1f2, ..., g1fN, g2f1, ...] when C == 1 or [g1f1u, g1f1v, g1f1w, g1f2u, ..., g1fNw, g2f1u, ...] when C == 3. For basis functions that depend on the orientation of the elements, all values for the first orientation are returned first, followed by values for the second, etc. `numOrientations' returns the overall number of orientations. If the `wantedOrientations' vector is not empty, only return the values for the desired orientation indices.'''
 mesh.add('getBasisFunctions', doc, None, iint('elementType'), ivectordouble('localCoord'), istring('functionSpaceType'), oint('numComponents'), ovectordouble('basisFunctions'), oint('numOrientations'), ivectorint('wantedOrientations', 'std::vector<int>()', '[]', '[]'))
 
-doc = '''Get the orientation index of the elements of type `elementType' in the entity of tag `tag'. The arguments have the same meaning as in `getBasisFunctions'. `basisFunctionsOrientation' is a vector giving for each element the orientation index in the values returned by `getBasisFunctions'. For Lagrange basis functions the call is superfluous as it will return a vector of zeros. If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vector must be preallocated).'''
-mesh.add('getBasisFunctionsOrientation', doc, None, iint('elementType'), istring('functionSpaceType'), ovectorint('basisFunctionsOrientation'), iint('tag','-1'), isize('task', '0'), isize('numTasks', '1'))
+doc = '''Get the orientation index of the elements of type `elementType' in the entity of tag `tag'. The arguments have the same meaning as in `getBasisFunctions'. `basisFunctionsOrientation' is a vector giving for each element the orientation index in the values returned by `getBasisFunctions'. For Lagrange basis functions the call is superfluous as it will return a vector of zeros. The orientation of an element is given by the order of the tags of its nodes; if `periodic' is set, the nodes on periodic entities are ordered by the tags of their master nodes, so that the basis functions on a periodic curve or surface are those of the master curve or surface (see `getPeriodicKeys'). If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vector must be preallocated).'''
+mesh.add('getBasisFunctionsOrientation', doc, None, iint('elementType'), istring('functionSpaceType'), ovectorint('basisFunctionsOrientation'), iint('tag','-1'), isize('task', '0'), isize('numTasks', '1'), ibool('periodic', 'true', 'True'))
 
-doc = '''Get the orientation of a single element `elementTag'.'''
-mesh.add('getBasisFunctionsOrientationForElement', doc, None, isize('elementTag'), istring('functionSpaceType'), oint('basisFunctionsOrientation'))
+doc = '''Get the orientation of a single element `elementTag', with the master nodes of the nodes on periodic entities if `periodic' is set (see `getBasisFunctionsOrientation').'''
+mesh.add('getBasisFunctionsOrientationForElement', doc, None, isize('elementTag'), istring('functionSpaceType'), oint('basisFunctionsOrientation'), ibool('periodic', 'true', 'True'))
 
 doc = '''Get the number of possible orientations for elements of type `elementType' and function space named `functionSpaceType'.'''
 mesh.add('getNumberOfOrientations', doc, oint, iint('elementType'), istring('functionSpaceType'))
@@ -416,8 +461,11 @@ mesh.add_special('preallocateBasisFunctionsOrientation', doc, ['onlycc++'], None
 doc = '''Get the global unique mesh edge identifiers `edgeTags' and orientations `edgeOrientation' for an input list of node tag pairs defining these edges, concatenated in the vector `nodeTags'. Mesh edges are created e.g. by `createEdges()', `getKeys()' or `addEdges()'. The reference positive orientation is n1 < n2, where n1 and n2 are the tags of the two edge nodes, which corresponds to the local orientation of edge-based basis functions as well.'''
 mesh.add('getEdges', doc, None, ivectorsize('nodeTags'), ovectorsize('edgeTags'), ovectorint('edgeOrientations'))
 
-doc = '''Get the global unique mesh face identifiers `faceTags' and orientations `faceOrientations' for an input list of a multiple of three (if `faceType' == 3) or four (if `faceType' == 4) node tags defining these faces, concatenated in the vector `nodeTags'. Mesh faces are created e.g. by `createFaces()', `getKeys()' or `addFaces()'.'''
-mesh.add('getFaces', doc, None, iint('faceType'), ivectorsize('nodeTags'), ovectorsize('faceTags'), ovectorint('faceOrientations'))
+doc = '''Get the global unique mesh face identifiers `faceTags' and orientations `faceOrientations' for an input list of faces defined by their node tags concatenated in the vector `nodeTags', with `faceSizes' the number of nodes of each face. Mesh faces are created e.g. by `createFaces()', `getKeys()' or `addFaces()'.'''
+mesh.add('getFaces', doc, None, ivectorsize('nodeTags'), ivectorint('faceSizes'), ovectorsize('faceTags'), ovectorint('faceOrientations'))
+
+doc = '''Get the global unique mesh face identifiers `faceTags' and orientations `faceOrientations' for an input list of faces with `faceType' nodes each (3 for triangular faces, 4 for quadrangular faces, etc.), defined by their node tags concatenated in the vector `nodeTags'. Mesh faces are created e.g. by `createFaces()', `getKeys()' or `addFaces()'.'''
+mesh.add('getFacesByType', doc, None, iint('faceType'), ivectorsize('nodeTags'), ovectorsize('faceTags'), ovectorint('faceOrientations'))
 
 doc = '''Create unique mesh edges for the entities `dimTags', given as a vector of (dim, tag) pairs.'''
 mesh.add('createEdges', doc, None, ivectorpair('dimTags', 'gmsh::vectorpair()', '[]', '[]'))
@@ -428,16 +476,16 @@ mesh.add('createFaces', doc, None, ivectorpair('dimTags', 'gmsh::vectorpair()', 
 doc = '''Get the global unique identifiers `edgeTags' and the nodes `edgeNodes' of the edges in the mesh. Mesh edges are created e.g. by `createEdges()', `getKeys()' or addEdges().'''
 mesh.add('getAllEdges', doc, None, ovectorsize('edgeTags'), ovectorsize('edgeNodes'))
 
-doc = '''Get the global unique identifiers `faceTags' and the nodes `faceNodes' of the faces of type `faceType' in the mesh. Mesh faces are created e.g. by `createFaces()', `getKeys()' or addFaces().'''
-mesh.add('getAllFaces', doc, None, iint('faceType'), ovectorsize('faceTags'), ovectorsize('faceNodes'))
+doc = '''Get the global unique identifiers `faceTags' and the nodes `faceNodes' of all the faces in the mesh, with `faceSizes' the number of nodes of each face. Mesh faces are created e.g. by `createFaces()', `getKeys()' or addFaces().'''
+mesh.add('getAllFaces', doc, None, ovectorsize('faceTags'), ovectorsize('faceNodes'), ovectorint('faceSizes'))
 
 doc = '''Add mesh edges defined by their global unique identifiers `edgeTags' and their nodes `edgeNodes'.'''
 mesh.add('addEdges', doc, None, ivectorsize('edgeTags'), ivectorsize('edgeNodes'))
 
-doc = '''Add mesh faces of type `faceType' defined by their global unique identifiers `faceTags' and their nodes `faceNodes'.'''
-mesh.add('addFaces', doc, None, iint('faceType'), ivectorsize('faceTags'), ivectorsize('faceNodes'))
+doc = '''Add mesh faces defined by their global unique identifiers `faceTags', their nodes `faceNodes' concatenated in a single vector, and `faceSizes' the number of nodes of each face.'''
+mesh.add('addFaces', doc, None, ivectorsize('faceTags'), ivectorsize('faceNodes'), ivectorint('faceSizes'))
 
-doc = '''Generate the pair of keys for the elements of type `elementType' in the entity of tag `tag', for the `functionSpaceType' function space. Each pair (`typeKey', `entityKey') uniquely identifies a basis function in the function space. If `returnCoord' is set, the `coord' vector contains the x, y, z coordinates locating basis functions for sorting purposes. Warning: this is an experimental feature and will probably change in a future release.'''
+doc = '''Generate the pair of keys for the elements of type `elementType' in the entity of tag `tag', for the `functionSpaceType' function space. Each pair (`typeKey', `entityKey') uniquely identifies a basis function in the function space. For the hierarchical function spaces, `entityKey' is the tag of the node, the global number of the edge or face (see `createEdges' and `createFaces') or the tag of the element the basis function is associated with, and `typeKey' is 4 times the position of the basis function among those of that entity, plus 0, 1, 2 or 3 for the node, edge, face and element: the keys of a basis function do not depend on the order of the function space, but they can be as large as 4 times the number of basis functions of the entity. For example, for "HcurlLegendre2" on a tetrahedron, each edge of global number e carries the keys (1, e) for its lowest order (Whitney) function, (5, e) and (9, e) for the gradients of order 1 and 2, and each face of global number f the keys (2, f) for the gradient and (6, f) and (10, f) for the two other functions of order 2; "HcurlLegendre1" has the keys (1, e) and (5, e) of the same functions. Keys identify the basis functions within one family of function spaces (H1, H(curl), H(div) or L2): the same keys designate different functions in two families, so a code combining several families in one field must tell them apart, e.g. by offsetting the type keys of each family. If `returnCoord' is set, the `coord' vector contains the x, y, z coordinates locating basis functions for sorting purposes. Warning: this is an experimental feature and will probably change in a future release.'''
 mesh.add('getKeys', doc, None, iint('elementType'), istring('functionSpaceType'), ovectorint('typeKeys'), ovectorsize('entityKeys'), ovectordouble('coord'), iint('tag', '-1'), ibool('returnCoord', 'true', 'True'))
 
 doc = '''Get the pair of keys for a single element `elementTag'.'''
@@ -458,8 +506,11 @@ mesh.add_special('preallocateBarycenters', doc, ['onlycc++'], None, iint('elemen
 doc = '''Get the nodes on the edges of all elements of type `elementType' classified on the entity of tag `tag'. `nodeTags' contains the node tags of the edges for all the elements: [e1a1n1, e1a1n2, e1a2n1, ...]. Data is returned by element, with elements in the same order as in `getElements' and `getElementsByType'. If `primary' is set, only the primary (begin/end) nodes of the edges are returned. If `tag' < 0, get the edge nodes for all entities. If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vector must be preallocated).'''
 mesh.add('getElementEdgeNodes', doc, None, iint('elementType'), ovectorsize('nodeTags'), iint('tag', '-1'), ibool('primary', 'false', 'False'), isize('task', '0'), isize('numTasks', '1'))
 
-doc = '''Get the nodes on the faces of type `faceType' (3 for triangular faces, 4 for quadrangular faces) of all elements of type `elementType' classified on the entity of tag `tag'. `nodeTags' contains the node tags of the faces for all elements: [e1f1n1, ..., e1f1nFaceType, e1f2n1, ...]. Data is returned by element, with elements in the same order as in `getElements' and `getElementsByType'. If `primary' is set, only the primary (corner) nodes of the faces are returned. If `tag' < 0, get the face nodes for all entities. If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vector must be preallocated).'''
-mesh.add('getElementFaceNodes', doc, None, iint('elementType'), iint('faceType'), ovectorsize('nodeTags'), iint('tag', '-1'), ibool('primary', 'false', 'False'), isize('task', '0'), isize('numTasks', '1'))
+doc = '''Get the nodes on the faces of all elements of type `elementType' classified on the entity of tag `tag'. `nodeTags' contains the node tags of the faces for all elements: [e1f1n1, ..., e1f1nN, e1f2n1, ...], and `faceSizes' the number of nodes of each face: [e1f1N, e1f2N, ...]. Faces are returned for each element in their canonical order, with elements in the same order as in `getElements' and `getElementsByType'. If `primary' is set, only the primary (corner) nodes of the faces are returned. If `tag' < 0, get the face nodes for all entities. If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vectors must be preallocated).'''
+mesh.add('getElementFaceNodes', doc, None, iint('elementType'), ovectorsize('nodeTags'), ovectorint('faceSizes'), iint('tag', '-1'), ibool('primary', 'false', 'False'), isize('task', '0'), isize('numTasks', '1'))
+
+doc = '''Get the nodes on the faces with `faceType' primary nodes (3 for triangular faces, 4 for quadrangular faces, etc.) of all elements of type `elementType' classified on the entity of tag `tag'. `nodeTags' contains the node tags of these faces for all elements: [e1f1n1, ..., e1f1nN, e1f2n1, ...], with the same number of nodes N for each face. Faces are returned for each element in their canonical order, with elements in the same order as in `getElements' and `getElementsByType'. If `primary' is set, only the primary (corner) nodes of the faces are returned. If `tag' < 0, get the face nodes for all entities. If `numTasks' > 1, only compute and return the part of the data indexed by `task' (for C++ only; output vector must be preallocated).'''
+mesh.add('getElementFaceNodesByType', doc, None, iint('elementType'), iint('faceType'), ovectorsize('nodeTags'), iint('tag', '-1'), ibool('primary', 'false', 'False'), isize('task', '0'), isize('numTasks', '1'))
 
 doc = '''Get the ghost elements `elementTags' and their associated `partitions' stored in the ghost entity of dimension `dim' and tag `tag'.'''
 mesh.add('getGhostElements', doc, None, iint('dim'), iint('tag'), ovectorsize('elementTags'), ovectorint('partitions'))
@@ -485,7 +536,7 @@ mesh.add('setTransfiniteCurve', doc, None, iint('tag'), iint('numNodes'), istrin
 doc = '''Set a transfinite meshing constraint on the surface `tag'. `arrangement' describes the arrangement of the triangles when the surface is not flagged as recombined: currently supported values are "Left", "Right", "AlternateLeft" and "AlternateRight". `cornerTags' can be used to specify the (3 or 4) corners of the transfinite interpolation explicitly; specifying the corners explicitly is mandatory if the surface has more that 3 or 4 points on its boundary.'''
 mesh.add('setTransfiniteSurface', doc, None, iint('tag'), istring('arrangement', '"Left"'), ivectorint('cornerTags', 'std::vector<int>()', '[]', '[]'))
 
-doc = '''Set a transfinite meshing constraint on the surface `tag'. `cornerTags' can be used to specify the (6 or 8) corners of the transfinite interpolation explicitly.'''
+doc = '''Set a transfinite meshing constraint on the volume `tag'. `cornerTags' can be used to specify the (6 or 8) corners of the transfinite interpolation explicitly.'''
 mesh.add('setTransfiniteVolume', doc, None, iint('tag'), ivectorint('cornerTags', 'std::vector<int>()', '[]', '[]'))
 
 doc = '''Set transfinite meshing constraints on the model entities in `dimTags', given as a vector of (dim, tag) pairs. Transfinite meshing constraints are added to the curves of the quadrangular surfaces and to the faces of 6-sided volumes. Quadragular faces with a corner angle superior to `cornerAngle' (in radians) are ignored. The number of points is automatically determined from the sizing constraints. If `dimTag' is empty, the constraints are applied to all entities in the model. If `recombine' is true, the recombine flag is automatically set on the transfinite surfaces.  '''
@@ -545,7 +596,7 @@ mesh.add('getPeriodic', doc, None, iint('dim'), ivectorint('tags'), ovectorint('
 doc = '''Get the master entity `tagMaster', the node tags `nodeTags' and their corresponding master node tags `nodeTagsMaster', and the affine transform `affineTransform' for the entity of dimension `dim' and tag `tag'. If `includeHighOrderNodes' is set, include high-order nodes in the returned data.'''
 mesh.add('getPeriodicNodes', doc, None, iint('dim'), iint('tag'), oint('tagMaster'), ovectorsize('nodeTags'), ovectorsize('nodeTagsMaster'), ovectordouble('affineTransform'), ibool('includeHighOrderNodes', 'false', 'False'))
 
-doc = '''Get the master entity `tagMaster' and the key pairs (`typeKeyMaster', `entityKeyMaster') corresponding to the entity `tag' and the key pairs (`typeKey', `entityKey') for the elements of type `elementType' and function space type `functionSpaceType'. If `returnCoord' is set, the `coord' and `coordMaster' vectors contain the x, y, z coordinates locating basis functions for sorting purposes.'''
+doc = '''Get the master entity `tagMaster' and the key pairs (`typeKeyMaster', `entityKeyMaster') corresponding to the entity `tag' and the key pairs (`typeKey', `entityKey') for the elements of type `elementType' and function space type `functionSpaceType'. If `returnCoord' is set, the `coord' and `coordMaster' vectors contain the x, y, z coordinates locating basis functions for sorting purposes. For the hierarchical function spaces, the elements must be oriented with `periodic' set in `getBasisFunctionsOrientation': the basis function of each key is then the basis function of its master key. On surfaces, the keys of "HdivLegendre" function spaces are those of the face functions of the 3D elements.'''
 mesh.add('getPeriodicKeys', doc, None, iint('elementType'), istring('functionSpaceType'), iint('tag'), oint('tagMaster'), ovectorint('typeKeys'), ovectorint('typeKeysMaster'), ovectorsize('entityKeys'), ovectorsize('entityKeysMaster'), ovectordouble('coord'), ovectordouble('coordMaster'), ibool('returnCoord', 'true', 'True'))
 
 doc = '''Import the model STL representation (if available) as the current mesh.'''
@@ -569,8 +620,8 @@ mesh.add('setVisibility', doc, None, ivectorsize('elementTags'), iint('value'))
 doc = '''Get the visibility of the elements of tags `elementTags'.'''
 mesh.add('getVisibility', doc, None, ivectorsize('elementTags'), ovectorint('values'))
 
-doc = '''Classify ("color") the surface mesh based on the angle threshold `angle' (in radians), and create new discrete surfaces, curves and points accordingly. If `boundary' is set, also create discrete curves on the boundary if the surface is open. If `forReparametrization' is set, create curves and surfaces that can be reparametrized using a single map. If `curveAngle' is less than Pi, also force curves to be split according to `curveAngle'. If `exportDiscrete' is set, clear any built-in CAD kernel entities and export the discrete entities in the built-in CAD kernel.'''
-mesh.add('classifySurfaces', doc, None, idouble('angle'), ibool('boundary', 'true', 'True'), ibool('forReparametrization', 'false', 'False'), idouble('curveAngle', 'M_PI', 'pi', 'pi'), ibool('exportDiscrete', 'true', 'True'))
+doc = '''Classify ("color") the surface mesh based on the angle threshold `angle' (in radians), and create new discrete surfaces, curves and points accordingly. The `oldSurfaceTags' and `newSurfaceTags' vectors map the old surface tags to the new surface tags, ie. `oldSurfaceTags[i]' corresponds to `newSurfaceTags[i]'. Removed surface tags are not returned, only old surfaces that map to one or more new surfaces are returned. If `boundary' is set, also create discrete curves on the boundary if the surface is open. If `forReparametrization' is set, create curves and surfaces that can be reparametrized using a single map. If `curveAngle' is less than Pi, also force curves to be split according to `curveAngle'. If `exportDiscrete' is set, clear any built-in CAD kernel entities and export the discrete entities in the built-in CAD kernel.'''
+mesh.add('classifySurfaces', doc, None, idouble('angle'), ovectorint('oldSurfaceTags'), ovectorint('newSurfaceTags'), ibool('boundary', 'true', 'True'), ibool('forReparametrization', 'false', 'False'), idouble('curveAngle', 'M_PI', 'pi', 'pi'), ibool('exportDiscrete', 'true', 'True'))
 
 doc = '''Create a geometry for the discrete entities `dimTags' (given as a vector of (dim, tag) pairs) represented solely by a mesh (without an underlying CAD description), i.e. create a parametrization for discrete curves and surfaces, assuming that each can be parametrized with a single map. If `dimTags' is empty, create a geometry for all the discrete entities.'''
 mesh.add('createGeometry', doc, None, ivectorpair('dimTags', 'gmsh::vectorpair()', '[]', '[]'))
@@ -754,7 +805,7 @@ mesh.add('setTransfiniteCurve', doc, None, iint('tag'), iint('nPoints'), istring
 doc = '''Set a transfinite meshing constraint on the surface `tag' in the built-in CAD kernel representation. `arrangement' describes the arrangement of the triangles when the surface is not flagged as recombined: currently supported values are "Left", "Right", "AlternateLeft" and "AlternateRight". `cornerTags' can be used to specify the (3 or 4) corners of the transfinite interpolation explicitly; specifying the corners explicitly is mandatory if the surface has more that 3 or 4 points on its boundary.'''
 mesh.add('setTransfiniteSurface', doc, None, iint('tag'), istring('arrangement', '"Left"'), ivectorint('cornerTags', 'std::vector<int>()', '[]', '[]'))
 
-doc = '''Set a transfinite meshing constraint on the surface `tag' in the built-in CAD kernel representation. `cornerTags' can be used to specify the (6 or 8) corners of the transfinite interpolation explicitly.'''
+doc = '''Set a transfinite meshing constraint on the volume `tag' in the built-in CAD kernel representation. `cornerTags' can be used to specify the (6 or 8) corners of the transfinite interpolation explicitly.'''
 mesh.add('setTransfiniteVolume', doc, None, iint('tag'), ivectorint('cornerTags', 'std::vector<int>()', '[]', '[]'))
 
 doc = '''Set a recombination meshing constraint on the entity of dimension `dim' and tag `tag' in the built-in CAD kernel representation. Currently only entities of dimension 2 (to recombine triangles into quadrangles) are supported; `angle' specifies the threshold angle for the simple recombination algorithm.'''
@@ -860,7 +911,7 @@ occ.add('addWedge', doc, oint, idouble('x'), idouble('y'), idouble('z'), idouble
 doc = '''Add a torus in the OpenCASCADE CAD representation, defined by its center (`x', `y', `z') and its 2 radii `r' and `r2'. If `tag' is positive, set the tag explicitly; otherwise a new tag is selected automatically. The optional argument `angle' defines the angular opening (from 0 to 2*Pi). If a vector `zAxis' of size 3 is provided, use it to define the z-axis. Return the tag of the torus.'''
 occ.add('addTorus', doc, oint, idouble('x'), idouble('y'), idouble('z'), idouble('r1'), idouble('r2'), iint('tag', '-1'), idouble('angle', '2*M_PI', '2*pi', '2*pi'), ivectordouble('zAxis', 'std::vector<double>()', '[]', '[]'))
 
-doc = '''Add a volume (if the optional argument `makeSolid' is set) or surfaces in the OpenCASCADE CAD representation, defined through the open or closed wires `wireTags'. If `tag' is positive, set the tag explicitly; otherwise a new tag is selected automatically. The new entities are returned in `outDimTags' as a vector of (dim, tag) pairs. If the optional argument `makeRuled' is set, the surfaces created on the boundary are forced to be ruled surfaces. If `maxDegree' is positive, set the maximal degree of resulting surface. The optional argument `continuity' allows to specify the continuity of the resulting shape ("C0", "G1", "C1", "G2", "C2", "C3", "CN"). The optional argument `parametrization' sets the parametrization type ("ChordLength", "Centripetal", "IsoParametric"). The optional argument `smoothing' determines if smoothing is applied.'''
+doc = '''Add a volume (if the optional argument `makeSolid' is set) or surfaces in the OpenCASCADE CAD representation, defined through the open or closed wires `wireTags'. If `tag' is positive, set the tag explicitly; otherwise a new tag is selected automatically. The new entities are returned in `outDimTags' as a vector of (dim, tag) pairs. If the optional argument `makeRuled' is set, the surfaces created on the boundary are forced to be ruled surfaces. If `maxDegree' is positive, set the maximal degree of resulting surface. The optional argument `continuity' specifies the continuity of the resulting shape ("C0", "G1", "C1", "G2", "C2", "C3", "CN"). The optional argument `parametrization' sets the parametrization type ("ChordLength", "Centripetal", "IsoParametric"). The optional argument `smoothing' determines if smoothing is applied.'''
 occ.add('addThruSections', doc, None, ivectorint('wireTags'), ovectorpair('outDimTags'), iint('tag', '-1'), ibool('makeSolid', 'true', 'True'), ibool('makeRuled', 'false', 'False'), iint('maxDegree', '-1'), istring('continuity', '""'), istring('parametrization', '""'), ibool('smoothing', 'false', 'False'))
 
 doc = '''Add a hollowed volume in the OpenCASCADE CAD representation, built from an initial volume `volumeTag' and a set of faces from this volume `excludeSurfaceTags', which are to be removed. The remaining faces of the volume become the walls of the hollowed solid, with thickness `offset'. If `tag' is positive, set the tag explicitly; otherwise a new tag is selected automatically.'''
@@ -908,7 +959,7 @@ occ.add('intersect', doc, None, ivectorpair('objectDimTags'), ivectorpair('toolD
 doc = '''Compute the boolean difference between the entities `objectDimTags' and `toolDimTags' (given as vectors of (dim, tag) pairs) in the OpenCASCADE CAD representation. Return the resulting entities in `outDimTags', and the correspondance between input and resulting entities in `outDimTagsMap'. If `tag' is positive, try to set the tag explicitly (only valid if the boolean operation results in a single entity). Remove the object if `removeObject' is set. Remove the tool if `removeTool' is set.'''
 occ.add('cut', doc, None, ivectorpair('objectDimTags'), ivectorpair('toolDimTags'), ovectorpair('outDimTags'), ovectorvectorpair('outDimTagsMap'), iint('tag', '-1'), ibool('removeObject', 'true', 'True'), ibool('removeTool', 'true', 'True'))
 
-doc = '''Compute the boolean fragments (general fuse) resulting from the intersection of the entities `objectDimTags' and `toolDimTags' (given as vectors of (dim, tag) pairs) in the OpenCASCADE CAD representation, making all interfaces conformal. When applied to entities of different dimensions, the lower dimensional entities will be automatically embedded in the higher dimensional entities if they are not on their boundary. Return the resulting entities in `outDimTags', and the correspondance between input and resulting entities in `outDimTagsMap'. If `tag' is positive, try to set the tag explicitly (only valid if the boolean operation results in a single entity). Remove the object if `removeObject' is set. Remove the tool if `removeTool' is set.'''
+doc = '''Compute the boolean fragments (general fuse) resulting from the intersection of the entities `objectDimTags' and `toolDimTags' (given as vectors of (dim, tag) pairs) in the OpenCASCADE CAD representation, making all interfaces conformal. When applied to entities of different dimensions, the lower dimensional entities will be automatically embedded in the higher dimensional entities if they are not on their boundary. In order to preserve entity tags, entities should be provided in ascending dimension order. Return the resulting entities in `outDimTags', and the correspondance between input and resulting entities in `outDimTagsMap'. If `tag' is positive, try to set the tag explicitly (only valid if the boolean operation results in a single entity). Remove the object if `removeObject' is set. Remove the tool if `removeTool' is set.'''
 occ.add('fragment', doc, None, ivectorpair('objectDimTags'), ivectorpair('toolDimTags'), ovectorpair('outDimTags'), ovectorvectorpair('outDimTagsMap'), iint('tag', '-1'), ibool('removeObject', 'true', 'True'), ibool('removeTool', 'true', 'True'))
 
 doc = '''Translate the entities `dimTags' (given as a vector of (dim, tag) pairs) in the OpenCASCADE CAD representation along (`dx', `dy', `dz').'''
@@ -1023,7 +1074,7 @@ view.add('addListData', doc, None, iint('tag'), istring('dataType'), iint('numEl
 doc = '''Get list-based post-processing data from the view with tag `tag'. Return the types `dataTypes', the number of elements `numElements' for each data type and the `data' for each data type. If `returnAdaptive' is set, return the data obtained after adaptive refinement, if available.'''
 view.add('getListData', doc, None, iint('tag'), ovectorstring('dataType'), ovectorint('numElements'), ovectorvectordouble('data'), ibool('returnAdaptive', 'false', 'False'))
 
-doc = '''Add a string to a list-based post-processing view with tag `tag'. If `coord' contains 3 coordinates the string is positioned in the 3D model space ("3D string"); if it contains 2 coordinates it is positioned in the 2D graphics viewport ("2D string"). `data' contains one or more (for multistep views) strings. `style' contains key-value pairs of styling parameters, concatenated. Available keys are "Font" (possible values: "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic", "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique", "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique", "Symbol", "ZapfDingbats", "Screen"), "FontSize" and "Align" (possible values: "Left" or "BottomLeft", "Center" or "BottomCenter", "Right" or "BottomRight", "TopLeft", "TopCenter", "TopRight", "CenterLeft", "CenterCenter", "CenterRight").'''
+doc = '''Add a string to a list-based post-processing view with tag `tag'. If `coord' contains 3 coordinates the string is positioned in the 3D model space ("3D string"); if it contains 2 coordinates it is positioned in the 2D graphics viewport ("2D string"). `data' contains one or more (for multistep views) strings. `style' contains key-value pairs of styling parameters, concatenated. Available keys are "Font" (possible values: "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic", "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique", "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique", "Symbol", "Screen"), "FontSize" and "Align" (possible values: "Left" or "BottomLeft", "Center" or "BottomCenter", "Right" or "BottomRight", "TopLeft", "TopCenter", "TopRight", "CenterLeft", "CenterCenter", "CenterRight").'''
 view.add('addListDataString', doc, None, iint('tag'), ivectordouble('coord'), ivectorstring('data'), ivectorstring('style', 'std::vector<std::string>()', '[]', '[]'))
 
 doc = '''Get list-based post-processing data strings (2D strings if `dim' == 2, 3D strings if `dim' = 3) from the view with tag `tag'. Return the coordinates in `coord', the strings in `data' and the styles in `style'.'''
@@ -1063,7 +1114,7 @@ option.add('setString', doc, None, iint('tag'), istring('name'), istring('value'
 doc = '''Get the `value' of the string option `name' for the view with tag `tag'.'''
 option.add('getString', doc, None, iint('tag'), istring('name'), ostring('value'))
 
-doc = '''Set the color option `name' to the RGBA value (`r', `g', `b', `a') for the view with tag `tag', where where `r', `g', `b' and `a' should be integers between 0 and 255.'''
+doc = '''Set the color option `name' to the RGBA value (`r', `g', `b', `a') for the view with tag `tag', where `r', `g', `b' and `a' should be integers between 0 and 255.'''
 option.add('setColor', doc, None, iint('tag'), istring('name'), iint('r'), iint('g'), iint('b'), iint('a', '255'))
 
 doc = '''Get the `r', `g', `b', `a' value of the color option `name' for the view with tag `tag'.'''
@@ -1082,6 +1133,9 @@ algorithm.add('triangulate', doc, None, ivectordouble('coordinates'), ovectorsiz
 doc = '''Tetrahedralize the points given in the `coordinates' vector as concatenated triplets of x, y, z coordinates, with (optional) constrained triangles given in the `triangles' vector as triplets of indexes (with numbering starting at 1), and return the tetrahedra as concatenated quadruplets of point indexes (with numbering starting at 1) in `tetrahedra'. Steiner points might be added in the `steiner' vector.'''
 algorithm.add('tetrahedralize', doc, None, ivectordouble('coordinates'), ovectorsize('tetrahedra'), ovectordouble('steiner'), ivectorsize('triangles', 'std::vector<std::size_t>()','[]', '[]'))
 
+doc = '''Refine the list of tetrahedra given in the vector `tetraIn', using point coordinates `coord' and nodal size field `sizeAtNode'. The new point coordinates are returned in the `steiner' vector, and the new tetrahedra in the `tetraOut' vector.'''
+algorithm.add('refineTetrahedra', doc, None, ivectordouble('coord'), ivectordouble('sizeAtNode'), ivectorsize('tetraIn'), ovectordouble('steiner'), ovectorsize('tetraOut'))
+
 ################################################################################
 
 plugin = gmsh.add_module('plugin', 'plugin functions')
@@ -1094,6 +1148,9 @@ plugin.add('setString', doc, None, istring('name'), istring('option'), istring('
 
 doc = '''Run the plugin `name'. Return the tag of the created view (if any). Plugins available in the official Gmsh release are listed in the "Gmsh plugins" chapter of the Gmsh reference manual (https://gmsh.info/doc/texinfo/gmsh.html#Gmsh-plugins).'''
 plugin.add('run', doc, oint, istring('name'))
+
+doc = '''Load a plugin from the shared library `fileName'. Such a plugin is a class derived from GMSH_PostPlugin or GMSH_MeshPlugin, defined with the GMSH_PLUGIN() macro of the private API header Plugin.h, and built against the headers of the private API and the shared Gmsh library (see "examples/external_plugin"). The plugins in the directories listed in the environment variable GMSHPLUGINSHOME (separated like in PATH) are loaded when Gmsh is initialized.'''
+plugin.add('load', doc, None, istring('fileName'))
 
 ################################################################################
 
@@ -1141,6 +1198,18 @@ fltk.add('selectElements', doc, oint, ovectorsize('elementTags'))
 
 doc = '''Select views in the user interface.'''
 fltk.add('selectViews', doc, oint, ovectorint('viewTags'))
+
+doc = '''Pick at the position (`x', `y') in the current graphical window, given in
+window coordinates with the origin at the top left corner, and return what a
+click there would select: the entities in `dimTags', the post-processing views
+in `viewTags', and, if `elements' is set, the mesh elements in `elementTags'
+instead of the entities they belong to. If `dim' is >= 0, only select entities
+of the given dimension. `w' and `h' give the size of the region that is looked
+at, in window coordinates. Unlike `selectEntities', `selectElements' and
+`selectViews', this does not wait for the user to click.'''
+fltk.add('pick', doc, oint, ovectorpair('dimTags'), ovectorsize('elementTags'),
+         ovectorint('viewTags'), idouble('x'), idouble('y'), iint('dim', '-1'),
+         ibool('elements', 'false', 'False'), iint('w', '5'), iint('h', '5'))
 
 doc = '''Split the current window horizontally (if `how' == "h") or vertically (if `how' == "v"), using ratio `ratio'. If `how' == "u", restore a single window.'''
 fltk.add('splitCurrentWindow', doc, None, istring('how', '"v"'), idouble('ratio', '0.5'))
@@ -1244,10 +1313,10 @@ logger.add('getWallTime', doc, odouble)
 doc = '''Return CPU time (in s).'''
 logger.add('getCpuTime', doc, odouble)
 
-doc = '''Return memory usage (in Mb).'''
+doc = '''Return memory usage (in MB).'''
 logger.add('getMemory', doc, odouble)
 
-doc = '''Return total available memory (in Mb).'''
+doc = '''Return total available memory (in MB).'''
 logger.add('getTotalMemory', doc, odouble)
 
 doc = '''Return last error message, if any.'''
@@ -1260,4 +1329,5 @@ api.write_c()
 api.write_python()
 api.write_julia()
 api.write_fortran()
+api.write_js()
 api.write_texi()

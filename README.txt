@@ -1,7 +1,7 @@
 This is Gmsh, an automatic three-dimensional finite element mesh generator with
 built-in pre- and post-processing facilities.
 
-Gmsh is copyright (C) 1997-2025 C. Geuzaine and J.-F. Remacle, and is
+Gmsh is copyright (C) 1997-2026 C. Geuzaine and J.-F. Remacle, and is
 distributed under the terms of the GNU General Public License, Version 2 or
 later, with an exception to allow for easier linking with external
 libraries. See LICENSE.txt and CREDITS.txt for more information.
@@ -54,6 +54,9 @@ Build Gmsh from the command line
 
   This will install the Gmsh app and the shared Gmsh library, as well as the C++
   and C include files, and the Python, Julia and Fortran modules.
+
+* The JavaScript Gmsh API needs Gmsh compiled to WebAssembly with Emscripten:
+  see utils/wasm/README.txt.
 
 * To change build options you can use "ccmake" instead of "cmake", e.g.:
 

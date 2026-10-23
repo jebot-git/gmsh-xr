@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -9,15 +9,22 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/fl_ask.H>
+#include "windowPlacement.h"
 
 // Derive the main window from Fl_Window (it shows up faster that way)
 class mainWindow : public Fl_Window {
+private:
+  // position relative to the main graphic window, applied when shown
+  int *_offset;
+
 public:
-  mainWindow(int w, int h, bool nonModal, const char *l = nullptr)
-    : Fl_Window(w, h, l)
+  mainWindow(int w, int h, bool nonModal, const char *l = nullptr,
+             int *offset = nullptr)
+    : Fl_Window(w, h, l), _offset(offset)
   {
     if(nonModal) set_non_modal();
   }
+  ~mainWindow() { forgetWindow(this); }
   virtual int handle(int event)
   {
     switch(event) {
@@ -44,6 +51,7 @@ public:
   }
   virtual void show()
   {
+    if(_offset) placeWindow(this, _offset);
     if(non_modal() && !shown()) Fl_Window::show(); // fix ordering
     Fl_Window::show();
   }

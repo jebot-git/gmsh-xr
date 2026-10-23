@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -100,7 +100,6 @@ public:
                    t * _v[1]->y() + (1. - t) * _v[0]->y(),
                    t * _v[1]->z() + (1. - t) * _v[0]->z());
   }
-  bool isInside(MVertex *v) const;
 };
 
 inline bool operator==(const MEdge &e1, const MEdge &e2)

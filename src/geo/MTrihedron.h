@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -77,6 +77,12 @@ public:
   {
     return MEdge(_v[edges_trihedron(num, 0)], _v[edges_trihedron(num, 1)]);
   }
+  virtual int getEdgeCorners(int num, MVertex *v[2]) const
+  {
+    v[0] = _v[edges_trihedron(num, 0)];
+    v[1] = _v[edges_trihedron(num, 1)];
+    return 2;
+  }
   virtual int getNumEdgesRep(bool curved) { return 5; }
   virtual void getEdgeRep(bool curved, int num, double *x, double *y, double *z,
                           SVector3 *n)
@@ -97,6 +103,15 @@ public:
                    _v[faces_trihedron(num, 2)]);
     else
       return MFace(_v[0], _v[1], _v[2], _v[3]);
+  }
+  virtual int getFaceCorners(int num, MVertex *v[4]) const
+  {
+    if(num > 0) {
+      for(int i = 0; i < 3; i++) v[i] = _v[faces_trihedron(num, i)];
+      return 3;
+    }
+    for(int i = 0; i < 4; i++) v[i] = _v[i];
+    return 4;
   }
 
   virtual int getNumFacesRep(bool curved) { return 2; }
@@ -151,9 +166,9 @@ public:
     }
   }
   virtual SPoint3 barycenterUVW() const { return SPoint3(0., 0., 0.); }
-  virtual bool isInside(double u, double v, double w) const
+  using MElement::isInside;
+  virtual bool isInside(double u, double v, double w, double tol) const
   {
-    double tol = getTolerance();
     if(u < -(1. + tol) || v < -(1. + tol) || u > (1. + tol) || v > (1. + tol) ||
        fabs(w) > tol)
       return false;

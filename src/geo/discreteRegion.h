@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -15,7 +15,9 @@ private:
   bool _geometry;
 
 public:
-  discreteRegion(GModel *model, int num);
+  // (geo: also create the volume in the GEO internals, so that scripts can
+  // refer to it)
+  discreteRegion(GModel *model, int num, bool geo = true);
   discreteRegion(GModel *model);
   virtual ~discreteRegion() {}
   virtual GeomType geomType() const { return DiscreteVolume; }

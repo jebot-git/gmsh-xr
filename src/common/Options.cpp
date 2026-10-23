@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -14,6 +14,7 @@
 #include "StringUtils.h"
 #include "GModel.h"
 #include "Context.h"
+#include "OwnerCache.h"
 #include "Options.h"
 #include "OS.h"
 #include "Colors.h"
@@ -43,20 +44,37 @@
 #include "Plugin.h"
 #endif
 
+#if defined(HAVE_OPENGL)
+#include "drawContext.h"
+#endif
+
 #if defined(HAVE_FLTK)
 #include <FL/Fl_Tooltip.H>
 #include "FlGui.h"
 #include "drawContextFltk.h"
 #include "graphicWindow.h"
+#include "openglWindow.h"
 #include "optionWindow.h"
 #include "manipWindow.h"
 #include "contextWindow.h"
 #include "clippingWindow.h"
 #include "onelabGroup.h"
 #include "viewButton.h"
-#include "drawContextFltkCairo.h"
 #include "drawContextFltkStringTexture.h"
+#include "drawContextFltkEmbedded.h"
 #endif
+
+// A colour that strings are drawn in has changed. The native font engine
+// keeps a texture of every string, in the colour it was drawn in, so they
+// all have to be made again; the engines that hold their strings in an atlas
+// do nothing here. Called wherever such a colour is set, whether from the
+// GUI or from a script.
+static void stringColorsChanged()
+{
+#if defined(HAVE_FLTK)
+  drawContext::global()->resetFontTextures();
+#endif
+}
 
 // General routines for string options
 
@@ -121,7 +139,8 @@ static void SetStringOptionsGUI(int num, StringXString s[])
 
 static void PrintStringOptions(int num, int level, int diff, int help,
                                StringXString s[], const char *prefix,
-                               FILE *file, std::vector<std::string> *vec = nullptr)
+                               FILE *file,
+                               std::vector<std::string> *vec = nullptr)
 {
   int i = 0;
   while(s[i].str) {
@@ -244,7 +263,8 @@ static void SetNumberOptionsGUI(int num, StringXNumber s[])
 
 static void PrintNumberOptions(int num, int level, int diff, int help,
                                StringXNumber s[], const char *prefix,
-                               FILE *file, std::vector<std::string> *vec = nullptr)
+                               FILE *file,
+                               std::vector<std::string> *vec = nullptr)
 {
   int i = 0;
   char tmp[1024];
@@ -469,6 +489,40 @@ static void PrintColorOptionsDoc(StringXColor s[], const char *prefix,
 
 // General routines
 
+// The mesh statistics the Mesh.Nb* options read. Each is one number of a walk
+// over every entity and every physical group, which a list of all the options
+// used to make once per option (a second on a large CAD model): while all
+// the options are read in one go (PrintOptions(), InitOptionsGUI()), which
+// cannot change the model, the walk is made once.
+namespace {
+  bool _statsKept = false, _statsValid = false;
+  double _stats[50];
+  // the statistics are kept for as long as one of these lives
+  struct keepMeshStatistics {
+    keepMeshStatistics() { _statsKept = true; _statsValid = false; }
+    ~keepMeshStatistics() { _statsKept = _statsValid = false; }
+  };
+} // namespace
+
+#if !defined(HAVE_MESH)
+static void GetStatistics(double stat[50])
+{
+  for(int i = 0; i < 50; i++) stat[i] = 0;
+}
+#endif
+
+static double meshStatistic(int i)
+{
+  if(_statsKept && _statsValid) return _stats[i];
+  double s[50];
+  GetStatistics(s);
+  if(_statsKept) {
+    for(int k = 0; k < 50; k++) _stats[k] = s[k];
+    _statsValid = true;
+  }
+  return s[i];
+}
+
 void InitOptions(int num)
 {
   CTX::instance()->init();
@@ -520,6 +574,7 @@ void ReInitOptions(int num)
 
 void InitOptionsGUI(int num)
 {
+  keepMeshStatistics keep;
   SetStringOptionsGUI(num, GeneralOptions_String);
   SetStringOptionsGUI(num, GeometryOptions_String);
   SetStringOptionsGUI(num, MeshOptions_String);
@@ -543,7 +598,8 @@ void InitOptionsGUI(int num)
 }
 
 static void PrintOptionCategory(int level, int diff, int help, const char *cat,
-                                FILE *file, std::vector<std::string> *vec = nullptr)
+                                FILE *file,
+                                std::vector<std::string> *vec = nullptr)
 {
   if(diff || !help || !(level & GMSH_FULLRC)) return;
   if(file) {
@@ -636,6 +692,7 @@ void Sanitize_String_Texi(std::string &s)
 void PrintOptions(int num, int level, int diff, int help, const char *filename,
                   std::vector<std::string> *vec)
 {
+  keepMeshStatistics keep;
 #if defined(HAVE_FLTK)
   if(FlGui::available()) FlGui::instance()->storeCurrentWindowsInfo();
 #endif
@@ -902,8 +959,7 @@ void PrintOptionsDoc()
       return;
     }
     fprintf(file, "%s@ftable @code\n", warn);
-    for(auto it =
-          PluginManager::instance()->begin();
+    for(auto it = PluginManager::instance()->begin();
         it != PluginManager::instance()->end(); ++it) {
       GMSH_Plugin *p = it->second;
       fprintf(file, "@item Plugin(%s)\n", p->getName().c_str());
@@ -975,9 +1031,7 @@ void PrintOptionsDoc()
       if(!f->callbacks.empty()) {
         fprintf(file, "Actions:@*\n");
         fprintf(file, "@table @code\n");
-        for(auto it2 =
-              f->callbacks.begin();
-            it2 != f->callbacks.end(); it2++) {
+        for(auto it2 = f->callbacks.begin(); it2 != f->callbacks.end(); it2++) {
           fprintf(file, "@item %s\n", it2->first.c_str());
           fprintf(file, "%s@*\n", it2->second->getDescription().c_str());
         }
@@ -994,7 +1048,7 @@ void PrintOptionsDoc()
       Msg::Error("Unable to open file 'shortcuts.texi'");
       return;
     }
-    std::vector<std::pair<std::string, std::string> > s =
+    std::vector<std::pair<std::string, std::string>> s =
       GetShortcutsUsage("Ctrl+");
     fprintf(file, "%s@table @kbd\n", warn);
     for(std::size_t i = 0; i < s.size(); i++)
@@ -1008,7 +1062,7 @@ void PrintOptionsDoc()
       Msg::Error("Unable to open file 'mouse.texi'");
       return;
     }
-    std::vector<std::pair<std::string, std::string> > s = GetMouseUsage();
+    std::vector<std::pair<std::string, std::string>> s = GetMouseUsage();
     fprintf(file, "%s@table @kbd\n", warn);
     for(std::size_t i = 0; i < s.size(); i++)
       fprintf(file, "@item %s\n%s\n", s[i].first.c_str(), s[i].second.c_str());
@@ -1021,7 +1075,7 @@ void PrintOptionsDoc()
       Msg::Error("Unable to open file 'commandline.texi'");
       return;
     }
-    std::vector<std::pair<std::string, std::string> > s = GetUsage();
+    std::vector<std::pair<std::string, std::string>> s = GetUsage();
     fprintf(file, "%s@ftable @code\n", warn);
     for(std::size_t i = 0; i < s.size(); i++)
       if(s[i].first.size() && s[i].second.size())
@@ -1187,9 +1241,7 @@ std::string opt_general_build_info(OPT_ARGS_STR)
     if(i != ss.size() - 1) s += "; ";
   }
   std::string::size_type pos;
-  while((pos = s.find("  ")) != std::string::npos) {
-    s.replace(pos, 2, " ");
-  }
+  while((pos = s.find("  ")) != std::string::npos) { s.replace(pos, 2, " "); }
   return s;
 }
 
@@ -1348,16 +1400,18 @@ std::string opt_general_gui_theme(OPT_ARGS_STR)
 std::string opt_general_graphics_font(OPT_ARGS_STR)
 {
   if(action & GMSH_SET) CTX::instance()->glFont = val;
-#if defined(HAVE_FLTK)
-  drawContextFltk dc;
+#if defined(HAVE_OPENGL)
+  drawContextGlobal dc;
   int index = dc.getFontIndex(CTX::instance()->glFont.c_str());
   if(action & GMSH_SET) {
     CTX::instance()->glFont = dc.getFontName(index);
     CTX::instance()->glFontEnum = dc.getFontEnum(index);
   }
+#if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI)) {
     FlGui::instance()->options->general.choice[1]->value(index);
   }
+#endif
 #endif
   return CTX::instance()->glFont;
 }
@@ -1365,47 +1419,58 @@ std::string opt_general_graphics_font(OPT_ARGS_STR)
 std::string opt_general_graphics_font_title(OPT_ARGS_STR)
 {
   if(action & GMSH_SET) CTX::instance()->glFontTitle = val;
-#if defined(HAVE_FLTK)
-  drawContextFltk dc;
+#if defined(HAVE_OPENGL)
+  drawContextGlobal dc;
   int index = dc.getFontIndex(CTX::instance()->glFontTitle.c_str());
   if(action & GMSH_SET) {
     CTX::instance()->glFontTitle = dc.getFontName(index);
     CTX::instance()->glFontEnumTitle = dc.getFontEnum(index);
   }
+#if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI)) {
     FlGui::instance()->options->general.choice[6]->value(index);
   }
+#endif
 #endif
   return CTX::instance()->glFontTitle;
 }
 
 std::string opt_general_graphics_font_engine(OPT_ARGS_STR)
 {
-  if(action & GMSH_SET) CTX::instance()->glFontEngine = val;
+  if(action & GMSH_SET) {
+    CTX::instance()->glFontEngine = val;
+    // the Cairo engine is gone: the embedded fonts replace it
+    if(val == "Cairo") {
+      Msg::Warning("Font engine 'Cairo' is deprecated: using 'Embedded'");
+      CTX::instance()->glFontEngine = "Embedded";
+    }
+  }
 
 #if defined(HAVE_FLTK)
   if(action & GMSH_SET) {
+    // the native engine draws at the raster position, which a core profile
+    // has none of
+    std::string engine = CTX::instance()->glFontEngine;
+    if(CTX::instance()->shaders && engine == "Native") {
+      Msg::Warning("Font engine 'Native' needs the fixed function pipeline "
+                   "(General.Shaders = 0): using 'Embedded'");
+      engine = "Embedded";
+    }
     drawContextGlobal *old = drawContext::global();
-    if(!old || old->getName() != CTX::instance()->glFontEngine) {
-#if defined(HAVE_CAIRO)
-      if(CTX::instance()->glFontEngine == "Cairo")
-        drawContext::setGlobal(new drawContextFltkCairo);
-      else
-#endif
-        if(CTX::instance()->glFontEngine == "StringTexture")
+    if(!old || old->getName() != engine) {
+      if(engine == "StringTexture")
         drawContext::setGlobal(new drawContextFltkStringTexture);
+      else if(engine == "Embedded")
+        drawContext::setGlobal(new drawContextFltkEmbedded);
       else
         drawContext::setGlobal(new drawContextFltk);
       if(old) delete old;
     }
   }
   if(FlGui::available() && (action & GMSH_GUI)) {
-    int index = 0;
-#if defined(HAVE_CAIRO)
-    if(CTX::instance()->glFontEngine == "Cairo") index = 1;
-#endif
-    if(CTX::instance()->glFontEngine == "StringTexture") index = 2;
-    FlGui::instance()->options->general.choice[7]->value(index);
+    Fl_Choice *c = FlGui::instance()->options->general.choice[7];
+    int index = c->find_index(CTX::instance()->glFontEngine.c_str());
+    c->value(index < 0 ? 0 : index);
   }
 #endif
 
@@ -2372,28 +2437,35 @@ double opt_general_graphics_size1(OPT_ARGS_NUM)
   return CTX::instance()->glSize[1];
 }
 
-double opt_general_context_position0(OPT_ARGS_NUM)
+double opt_general_window_position_deprecated(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->ctxPosition[0] = (int)val;
-  return CTX::instance()->ctxPosition[0];
+  // the absolute window positions were replaced by offsets relative to the
+  // graphic window; the old values are ignored
+  return 0.;
 }
 
-double opt_general_context_position1(OPT_ARGS_NUM)
+double opt_general_context_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->ctxPosition[1] = (int)val;
-  return CTX::instance()->ctxPosition[1];
+  if(action & GMSH_SET) CTX::instance()->ctxOffset[0] = (int)val;
+  return CTX::instance()->ctxOffset[0];
 }
 
-double opt_general_file_chooser_position0(OPT_ARGS_NUM)
+double opt_general_context_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->fileChooserPosition[0] = (int)val;
-  return CTX::instance()->fileChooserPosition[0];
+  if(action & GMSH_SET) CTX::instance()->ctxOffset[1] = (int)val;
+  return CTX::instance()->ctxOffset[1];
 }
 
-double opt_general_file_chooser_position1(OPT_ARGS_NUM)
+double opt_general_file_chooser_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->fileChooserPosition[1] = (int)val;
-  return CTX::instance()->fileChooserPosition[1];
+  if(action & GMSH_SET) CTX::instance()->fileChooserOffset[0] = (int)val;
+  return CTX::instance()->fileChooserOffset[0];
+}
+
+double opt_general_file_chooser_offset1(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->fileChooserOffset[1] = (int)val;
+  return CTX::instance()->fileChooserOffset[1];
 }
 
 double opt_general_system_menu_bar(OPT_ARGS_NUM)
@@ -2480,48 +2552,40 @@ double opt_general_menu_size1(OPT_ARGS_NUM)
   return CTX::instance()->menuSize[1];
 }
 
-double opt_general_menu_position0(OPT_ARGS_NUM)
+double opt_general_menu_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->menuPosition[0] = (int)val;
-    if(CTX::instance()->menuPosition[0] < 0)
-      CTX::instance()->menuPosition[0] = 0;
-  }
-  return CTX::instance()->menuPosition[0];
+  if(action & GMSH_SET) CTX::instance()->menuOffset[0] = (int)val;
+  return CTX::instance()->menuOffset[0];
 }
 
-double opt_general_menu_position1(OPT_ARGS_NUM)
+double opt_general_menu_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->menuPosition[1] = (int)val;
-    if(CTX::instance()->menuPosition[1] < 0)
-      CTX::instance()->menuPosition[1] = 300;
-  }
-  return CTX::instance()->menuPosition[1];
+  if(action & GMSH_SET) CTX::instance()->menuOffset[1] = (int)val;
+  return CTX::instance()->menuOffset[1];
 }
 
-double opt_general_option_position0(OPT_ARGS_NUM)
+double opt_general_option_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->optPosition[0] = (int)val;
-  return CTX::instance()->optPosition[0];
+  if(action & GMSH_SET) CTX::instance()->optOffset[0] = (int)val;
+  return CTX::instance()->optOffset[0];
 }
 
-double opt_general_option_position1(OPT_ARGS_NUM)
+double opt_general_option_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->optPosition[1] = (int)val;
-  return CTX::instance()->optPosition[1];
+  if(action & GMSH_SET) CTX::instance()->optOffset[1] = (int)val;
+  return CTX::instance()->optOffset[1];
 }
 
-double opt_general_plugin_position0(OPT_ARGS_NUM)
+double opt_general_plugin_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->pluginPosition[0] = (int)val;
-  return CTX::instance()->pluginPosition[0];
+  if(action & GMSH_SET) CTX::instance()->pluginOffset[0] = (int)val;
+  return CTX::instance()->pluginOffset[0];
 }
 
-double opt_general_plugin_position1(OPT_ARGS_NUM)
+double opt_general_plugin_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->pluginPosition[1] = (int)val;
-  return CTX::instance()->pluginPosition[1];
+  if(action & GMSH_SET) CTX::instance()->pluginOffset[1] = (int)val;
+  return CTX::instance()->pluginOffset[1];
 }
 
 double opt_general_plugin_size0(OPT_ARGS_NUM)
@@ -2536,16 +2600,16 @@ double opt_general_plugin_size1(OPT_ARGS_NUM)
   return CTX::instance()->pluginSize[1];
 }
 
-double opt_general_field_position0(OPT_ARGS_NUM)
+double opt_general_field_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->fieldPosition[0] = (int)val;
-  return CTX::instance()->fieldPosition[0];
+  if(action & GMSH_SET) CTX::instance()->fieldOffset[0] = (int)val;
+  return CTX::instance()->fieldOffset[0];
 }
 
-double opt_general_field_position1(OPT_ARGS_NUM)
+double opt_general_field_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->fieldPosition[1] = (int)val;
-  return CTX::instance()->fieldPosition[1];
+  if(action & GMSH_SET) CTX::instance()->fieldOffset[1] = (int)val;
+  return CTX::instance()->fieldOffset[1];
 }
 
 double opt_general_field_size0(OPT_ARGS_NUM)
@@ -2560,16 +2624,16 @@ double opt_general_field_size1(OPT_ARGS_NUM)
   return CTX::instance()->fieldSize[1];
 }
 
-double opt_general_extra_position0(OPT_ARGS_NUM)
+double opt_general_extra_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->extraPosition[0] = (int)val;
-  return CTX::instance()->extraPosition[0];
+  if(action & GMSH_SET) CTX::instance()->extraOffset[0] = (int)val;
+  return CTX::instance()->extraOffset[0];
 }
 
-double opt_general_extra_position1(OPT_ARGS_NUM)
+double opt_general_extra_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->extraPosition[1] = (int)val;
-  return CTX::instance()->extraPosition[1];
+  if(action & GMSH_SET) CTX::instance()->extraOffset[1] = (int)val;
+  return CTX::instance()->extraOffset[1];
 }
 
 double opt_general_extra_size0(OPT_ARGS_NUM)
@@ -2584,64 +2648,64 @@ double opt_general_extra_size1(OPT_ARGS_NUM)
   return CTX::instance()->extraSize[1];
 }
 
-double opt_general_statistics_position0(OPT_ARGS_NUM)
+double opt_general_statistics_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->statPosition[0] = (int)val;
-  return CTX::instance()->statPosition[0];
+  if(action & GMSH_SET) CTX::instance()->statOffset[0] = (int)val;
+  return CTX::instance()->statOffset[0];
 }
 
-double opt_general_statistics_position1(OPT_ARGS_NUM)
+double opt_general_statistics_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->statPosition[1] = (int)val;
-  return CTX::instance()->statPosition[1];
+  if(action & GMSH_SET) CTX::instance()->statOffset[1] = (int)val;
+  return CTX::instance()->statOffset[1];
 }
 
-double opt_general_visibility_position0(OPT_ARGS_NUM)
+double opt_general_visibility_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->visPosition[0] = (int)val;
-  return CTX::instance()->visPosition[0];
+  if(action & GMSH_SET) CTX::instance()->visOffset[0] = (int)val;
+  return CTX::instance()->visOffset[0];
 }
 
-double opt_general_visibility_position1(OPT_ARGS_NUM)
+double opt_general_visibility_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->visPosition[1] = (int)val;
-  return CTX::instance()->visPosition[1];
+  if(action & GMSH_SET) CTX::instance()->visOffset[1] = (int)val;
+  return CTX::instance()->visOffset[1];
 }
 
-double opt_general_clip_position0(OPT_ARGS_NUM)
+double opt_general_clip_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->clipPosition[0] = (int)val;
-  return CTX::instance()->clipPosition[0];
+  if(action & GMSH_SET) CTX::instance()->clipOffset[0] = (int)val;
+  return CTX::instance()->clipOffset[0];
 }
 
-double opt_general_clip_position1(OPT_ARGS_NUM)
+double opt_general_clip_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->clipPosition[1] = (int)val;
-  return CTX::instance()->clipPosition[1];
+  if(action & GMSH_SET) CTX::instance()->clipOffset[1] = (int)val;
+  return CTX::instance()->clipOffset[1];
 }
 
-double opt_general_manip_position0(OPT_ARGS_NUM)
+double opt_general_manip_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->manipPosition[0] = (int)val;
-  return CTX::instance()->manipPosition[0];
+  if(action & GMSH_SET) CTX::instance()->manipOffset[0] = (int)val;
+  return CTX::instance()->manipOffset[0];
 }
 
-double opt_general_manip_position1(OPT_ARGS_NUM)
+double opt_general_manip_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->manipPosition[1] = (int)val;
-  return CTX::instance()->manipPosition[1];
+  if(action & GMSH_SET) CTX::instance()->manipOffset[1] = (int)val;
+  return CTX::instance()->manipOffset[1];
 }
 
-double opt_general_hot_position0(OPT_ARGS_NUM)
+double opt_general_hot_offset0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->hotPosition[0] = (int)val;
-  return CTX::instance()->hotPosition[0];
+  if(action & GMSH_SET) CTX::instance()->hotOffset[0] = (int)val;
+  return CTX::instance()->hotOffset[0];
 }
 
-double opt_general_hot_position1(OPT_ARGS_NUM)
+double opt_general_hot_offset1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->hotPosition[1] = (int)val;
-  return CTX::instance()->hotPosition[1];
+  if(action & GMSH_SET) CTX::instance()->hotOffset[1] = (int)val;
+  return CTX::instance()->hotOffset[1];
 }
 
 double opt_general_high_resolution_graphics(OPT_ARGS_NUM)
@@ -2977,6 +3041,201 @@ double opt_general_verbosity(OPT_ARGS_NUM)
   return Msg::GetVerbosity();
 }
 
+double opt_general_vertex_buffer_objects(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->vertexBufferObjects = (int)val;
+  return CTX::instance()->vertexBufferObjects;
+}
+
+double opt_general_shading(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->shading = std::max(0, std::min(3, (int)val));
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->options->general.choice[8]->value(
+      CTX::instance()->shading);
+    FlGui::instance()->options->activate("shaders");
+  }
+#endif
+  return CTX::instance()->shading;
+}
+
+double opt_general_studio_light_spread(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->studioLightSpread = val;
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->general.value[35]->value(
+      CTX::instance()->studioLightSpread);
+#endif
+  return CTX::instance()->studioLightSpread;
+}
+
+double opt_general_brightness(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->brightness = std::max(0., std::min(10., val));
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->general.value[36]->value(
+      CTX::instance()->brightness);
+#endif
+  return CTX::instance()->brightness;
+}
+
+double opt_general_studio_floor_offset(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->studioFloorOffset = val;
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->general.value[34]->value(
+      CTX::instance()->studioFloorOffset);
+#endif
+  return CTX::instance()->studioFloorOffset;
+}
+
+double opt_general_studio_floor_size(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->studioFloorSize = std::max(0., val);
+  return CTX::instance()->studioFloorSize;
+}
+
+double opt_general_phlogiston(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->phlogiston = (int)val;
+  return CTX::instance()->phlogiston;
+}
+
+double opt_general_studio_samples(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->studioSamples = (int)val;
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->general.value[33]->value(
+      CTX::instance()->studioSamples);
+#endif
+  return CTX::instance()->studioSamples;
+}
+
+double opt_general_studio_shadow_strength(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->studioShadowStrength = std::max(0., std::min(10., val));
+  return CTX::instance()->studioShadowStrength;
+}
+
+double opt_general_order_independent_transparency(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->orderIndependentTransparency = (int)val;
+  return CTX::instance()->orderIndependentTransparency;
+}
+
+double opt_geometry_opacity(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(val < 0.) val = 0.;
+    if(val > 1.) val = 1.;
+    CTX::instance()->geom.transparency = val;
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->options->geo.value[21]->value(
+      CTX::instance()->geom.transparency);
+  }
+#endif
+  return CTX::instance()->geom.transparency;
+}
+
+double opt_geometry_opacity_mode(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->geom.transparencyMode = (int)val;
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->geo.choice[6]->value(
+      CTX::instance()->geom.transparencyMode);
+#endif
+  return CTX::instance()->geom.transparencyMode;
+}
+
+double opt_mesh_opacity(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(val < 0.) val = 0.;
+    if(val > 1.) val = 1.;
+    CTX::instance()->mesh.transparency = val;
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->options->mesh.value[27]->value(
+      CTX::instance()->mesh.transparency);
+  }
+#endif
+  return CTX::instance()->mesh.transparency;
+}
+
+double opt_mesh_opacity_mode(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->mesh.transparencyMode = (int)val;
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->mesh.choice[11]->value(
+      CTX::instance()->mesh.transparencyMode);
+#endif
+  return CTX::instance()->mesh.transparencyMode;
+}
+
+double opt_view_opacity(OPT_ARGS_NUM)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0.);
+  if(action & GMSH_SET) {
+    if(val < 0.) val = 0.;
+    if(val > 1.) val = 1.;
+    opt->transparency = val;
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num)) {
+    FlGui::instance()->options->view.value[79]->value(opt->transparency);
+  }
+#endif
+  return opt->transparency;
+#else
+  return 1.;
+#endif
+}
+
+double opt_general_shaders(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+#if defined(HAVE_FLTK)
+    int old = CTX::instance()->shaders;
+#endif
+    CTX::instance()->shaders = (int)val;
+#if defined(HAVE_FLTK)
+    // the pipeline is chosen when the context is made; the font engine
+    // depends on it
+    if(CTX::instance()->shaders != old) {
+      resetOpenglMode();
+      opt_general_graphics_font_engine(0, GMSH_SET | GMSH_GUI,
+                                       CTX::instance()->glFontEngine);
+    }
+#endif
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->options->general.butt[3]->value(
+      CTX::instance()->shaders);
+    FlGui::instance()->options->activate("shaders");
+  }
+#endif
+  return CTX::instance()->shaders;
+}
+
 double opt_general_progress_meter_step(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) { Msg::SetProgressMeterStep((int)val); }
@@ -3083,6 +3342,21 @@ double opt_general_mouse_hover_meshes(OPT_ARGS_NUM)
   return CTX::instance()->mouseHoverMeshes;
 }
 
+double opt_general_mouse_hover_highlight(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    CTX::instance()->mouseHoverHighlight = (int)val;
+    if(!CTX::instance()->mouseHoverHighlight)
+      GModel::current()->setSelection(0);
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->general.butt[23]->value(
+      CTX::instance()->mouseHoverHighlight);
+#endif
+  return CTX::instance()->mouseHoverHighlight;
+}
+
 double opt_general_mouse_invert_zoom(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->mouseInvertZoom = (int)val;
@@ -3118,39 +3392,66 @@ double opt_general_draw_bounding_box(OPT_ARGS_NUM)
   return CTX::instance()->drawBBox;
 }
 
+// The bounding box of the current model, which the six options below read.
+// It walks every entity (seconds on a large CAD model, and a list of all the
+// options asked for it six times), so it is computed once for all six and
+// again only when the geometry or the mesh has changed.
+namespace {
+  struct modelBox {
+    std::vector<int> token;
+    SBoundingBox3d bb;
+  };
+  OwnerCache<modelBox> _modelBoxes;
+} // namespace
+
+static SBoundingBox3d modelBounds()
+{
+  CTX *c = CTX::instance();
+  GModel *m = GModel::current();
+  std::vector<int> token = {c->meshContentStamp, c->geom.stamp[0],
+                            c->geom.stamp[1], c->geom.stamp[2],
+                            c->geom.stamp[3]};
+  modelBox &b = _modelBoxes[m];
+  if(b.token != token) {
+    b.bb = m->bounds();
+    b.token = token;
+  }
+  return b.bb;
+}
+
 double opt_general_xmin(OPT_ARGS_NUM)
 {
-  SBoundingBox3d bb = GModel::current()->bounds();
+  SBoundingBox3d bb = modelBounds();
   return bb.empty() ? 0. : bb.min().x();
 }
 
 double opt_general_xmax(OPT_ARGS_NUM)
 {
-  SBoundingBox3d bb = GModel::current()->bounds();
+  SBoundingBox3d bb = modelBounds();
   return bb.empty() ? 0. : bb.max().x();
 }
 
 double opt_general_ymin(OPT_ARGS_NUM)
 {
-  SBoundingBox3d bb = GModel::current()->bounds();
+  SBoundingBox3d bb = modelBounds();
   return bb.empty() ? 0. : bb.min().y();
 }
 
 double opt_general_ymax(OPT_ARGS_NUM)
 {
-  SBoundingBox3d bb = GModel::current()->bounds();
+  SBoundingBox3d bb = modelBounds();
   return bb.empty() ? 0. : bb.max().y();
 }
 
 double opt_general_zmin(OPT_ARGS_NUM)
 {
-  SBoundingBox3d bb = GModel::current()->bounds();
+  SBoundingBox3d bb = modelBounds();
   return bb.empty() ? 0. : bb.min().z();
 }
 
 double opt_general_zmax(OPT_ARGS_NUM)
 {
-  SBoundingBox3d bb = GModel::current()->bounds();
+  SBoundingBox3d bb = modelBounds();
   return bb.empty() ? 0. : bb.max().z();
 }
 
@@ -3196,37 +3497,37 @@ double opt_general_axes_auto_position(OPT_ARGS_NUM)
   return CTX::instance()->axesAutoPosition;
 }
 
-double opt_general_axes_tics0(OPT_ARGS_NUM)
+double opt_general_axes_ticks0(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->axesTics[0] = val;
+  if(action & GMSH_SET) CTX::instance()->axesTicks[0] = val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
     FlGui::instance()->options->general.value[17]->value(
-      CTX::instance()->axesTics[0]);
+      CTX::instance()->axesTicks[0]);
 #endif
-  return CTX::instance()->axesTics[0];
+  return CTX::instance()->axesTicks[0];
 }
 
-double opt_general_axes_tics1(OPT_ARGS_NUM)
+double opt_general_axes_ticks1(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->axesTics[1] = val;
+  if(action & GMSH_SET) CTX::instance()->axesTicks[1] = val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
     FlGui::instance()->options->general.value[18]->value(
-      CTX::instance()->axesTics[1]);
+      CTX::instance()->axesTicks[1]);
 #endif
-  return CTX::instance()->axesTics[1];
+  return CTX::instance()->axesTicks[1];
 }
 
-double opt_general_axes_tics2(OPT_ARGS_NUM)
+double opt_general_axes_ticks2(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->axesTics[2] = val;
+  if(action & GMSH_SET) CTX::instance()->axesTicks[2] = val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
     FlGui::instance()->options->general.value[19]->value(
-      CTX::instance()->axesTics[2]);
+      CTX::instance()->axesTicks[2]);
 #endif
-  return CTX::instance()->axesTics[2];
+  return CTX::instance()->axesTicks[2];
 }
 
 double opt_general_axes_xmin(OPT_ARGS_NUM)
@@ -3391,25 +3692,20 @@ double opt_general_quadric_subdivisions(OPT_ARGS_NUM)
   return CTX::instance()->quadricSubdivisions;
 }
 
+double opt_general_graphics_cache_size(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->graphicsCacheSize = val;
+  return CTX::instance()->graphicsCacheSize;
+}
+
 double opt_general_double_buffer(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     CTX::instance()->db = (int)val;
 #if defined(HAVE_FLTK)
-    if(FlGui::available()) {
-      int mode =
-        FL_RGB | FL_DEPTH | (CTX::instance()->db ? FL_DOUBLE : FL_SINGLE);
-      if(CTX::instance()->antialiasing) mode |= FL_MULTISAMPLE;
-      for(std::size_t i = 0; i < FlGui::instance()->graph.size(); i++)
-        for(std::size_t j = 0; j < FlGui::instance()->graph[i]->gl.size(); j++)
-          FlGui::instance()->graph[i]->gl[j]->mode(mode);
-    }
+    resetOpenglMode();
 #endif
   }
-#if defined(HAVE_FLTK)
-  if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->options->general.butt[3]->value(CTX::instance()->db);
-#endif
   return CTX::instance()->db;
 }
 
@@ -3418,14 +3714,7 @@ double opt_general_antialiasing(OPT_ARGS_NUM)
   if(action & GMSH_SET) {
     CTX::instance()->antialiasing = (int)val;
 #if defined(HAVE_FLTK)
-    if(FlGui::available()) {
-      int mode =
-        FL_RGB | FL_DEPTH | (CTX::instance()->db ? FL_DOUBLE : FL_SINGLE);
-      if(CTX::instance()->antialiasing) mode |= FL_MULTISAMPLE;
-      for(std::size_t i = 0; i < FlGui::instance()->graph.size(); i++)
-        for(std::size_t j = 0; j < FlGui::instance()->graph[i]->gl.size(); j++)
-          FlGui::instance()->graph[i]->gl[j]->mode(mode);
-    }
+    resetOpenglMode();
 #endif
   }
 #if defined(HAVE_FLTK)
@@ -3654,7 +3943,7 @@ double opt_general_heavy_visualization(OPT_ARGS_NUM)
   if(action & GMSH_SET) {
 #if defined(HAVE_VISUDEV)
     if(CTX::instance()->heavyVisu != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
 #endif
     CTX::instance()->heavyVisu = (int)val;
   }
@@ -3672,7 +3961,8 @@ double opt_general_stereo_mode(OPT_ARGS_NUM)
   if(CTX::instance()->stereo) opt_general_camera_mode(num, action, 1.);
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->options->general.butt[17]->value(CTX::instance()->stereo);
+    FlGui::instance()->options->general.butt[17]->value(
+      CTX::instance()->stereo);
 #endif
   return CTX::instance()->stereo;
 }
@@ -3682,8 +3972,8 @@ double opt_general_eye_sep_ratio(OPT_ARGS_NUM)
   if(action & GMSH_SET) CTX::instance()->eye_sep_ratio = (double)val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->options->general.value[29]->value
-      (CTX::instance()->eye_sep_ratio) ;
+    FlGui::instance()->options->general.value[29]->value(
+      CTX::instance()->eye_sep_ratio);
 #endif
   return CTX::instance()->eye_sep_ratio;
 }
@@ -3693,8 +3983,8 @@ double opt_general_focallength_ratio(OPT_ARGS_NUM)
   if(action & GMSH_SET) CTX::instance()->focallength_ratio = (double)val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->options->general.value[30]->value
-      (CTX::instance()->focallength_ratio);
+    FlGui::instance()->options->general.value[30]->value(
+      CTX::instance()->focallength_ratio);
 #endif
   return CTX::instance()->focallength_ratio;
 }
@@ -3704,8 +3994,8 @@ double opt_general_camera_aperture(OPT_ARGS_NUM)
   if(action & GMSH_SET) CTX::instance()->camera_aperture = (double)val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->options->general.value[31]->value
-      (CTX::instance()->camera_aperture);
+    FlGui::instance()->options->general.value[31]->value(
+      CTX::instance()->camera_aperture);
 #endif
   return CTX::instance()->camera_aperture;
 }
@@ -3714,9 +4004,9 @@ double opt_general_camera_mode(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->camera = (int)val;
 #if defined(HAVE_FLTK)
-  if(FlGui::available() && (action & GMSH_GUI)){
-    FlGui::instance()->options->general.butt[18]->value
-      (CTX::instance()->camera);
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->options->general.butt[18]->value(
+      CTX::instance()->camera);
     FlGui::instance()->options->activate("general_camera");
   }
 #endif
@@ -3963,14 +4253,37 @@ double opt_general_clip5d(OPT_ARGS_NUM)
   return CTX::instance()->clipPlane[5][3];
 }
 
+double opt_general_clip_capping(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->clipCapping != (int)val) {
+      CTX::instance()->clipCapping = (int)val;
+      // the caps are part of the arrays, so they have to be built again
+      CTX::instance()->meshOptionsChanged();
+#if defined(HAVE_POST)
+      for(std::size_t i = 0; i < PView::list.size(); i++)
+        PView::list[i]->setChanged(true);
+#endif
+    }
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->clipping->butt[0]->value(
+      CTX::instance()->clipCapping);
+    FlGui::instance()->clipping->activateButtons();
+  }
+#endif
+  return CTX::instance()->clipCapping;
+}
+
 double opt_general_clip_whole_elements(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->clipWholeElements = (int)val;
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI)) {
-    FlGui::instance()->clipping->butt[0]->value(
+    FlGui::instance()->clipping->butt[1]->value(
       CTX::instance()->clipWholeElements);
-    FlGui::instance()->options->activate("clip_whole_elements");
+    FlGui::instance()->clipping->activateButtons();
   }
 #endif
   return CTX::instance()->clipWholeElements;
@@ -3981,9 +4294,11 @@ double opt_general_clip_only_draw_intersecting_volume(OPT_ARGS_NUM)
   if(action & GMSH_SET)
     CTX::instance()->clipOnlyDrawIntersectingVolume = (int)val;
 #if defined(HAVE_FLTK)
-  if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->clipping->butt[1]->value(
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->clipping->butt[2]->value(
       CTX::instance()->clipOnlyDrawIntersectingVolume);
+    FlGui::instance()->clipping->activateButtons();
+  }
 #endif
   return CTX::instance()->clipOnlyDrawIntersectingVolume;
 }
@@ -3992,9 +4307,11 @@ double opt_general_clip_only_volume(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->clipOnlyVolume = (int)val;
 #if defined(HAVE_FLTK)
-  if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->clipping->butt[2]->value(
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    FlGui::instance()->clipping->butt[3]->value(
       CTX::instance()->clipOnlyVolume);
+    FlGui::instance()->clipping->activateButtons();
+  }
 #endif
   return CTX::instance()->clipOnlyVolume;
 }
@@ -4216,12 +4533,11 @@ double opt_general_light53(OPT_ARGS_NUM)
 
 double opt_general_num_threads(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->numThreads = (int)val;
-  }
+  if(action & GMSH_SET) { CTX::instance()->numThreads = (int)val; }
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI))
-    FlGui::instance()->options->general.value[32]->value(CTX::instance()->numThreads);
+    FlGui::instance()->options->general.value[32]->value(
+      CTX::instance()->numThreads);
 #endif
   return CTX::instance()->numThreads;
 }
@@ -4787,8 +5103,7 @@ double opt_geometry_occ_boolean_check_inverted(OPT_ARGS_NUM)
 
 double opt_geometry_occ_boolean_glue(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET)
-    CTX::instance()->geom.occBooleanGlue = (int)val;
+  if(action & GMSH_SET) CTX::instance()->geom.occBooleanGlue = (int)val;
   return CTX::instance()->geom.occBooleanGlue;
 }
 
@@ -4808,8 +5123,7 @@ double opt_geometry_occ_boolean_preserve_numbering(OPT_ARGS_NUM)
 
 double opt_geometry_occ_boolean_simplify(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET)
-    CTX::instance()->geom.occBooleanSimplify = (int)val;
+  if(action & GMSH_SET) CTX::instance()->geom.occBooleanSimplify = (int)val;
   return CTX::instance()->geom.occBooleanSimplify;
 }
 
@@ -4837,10 +5151,31 @@ double opt_geometry_occ_import_labels(OPT_ARGS_NUM)
   return CTX::instance()->geom.occImportLabels;
 }
 
+double opt_geometry_occ_write_parametric_curves(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->geom.occWriteParametricCurves = val ? 1 : 0;
+  return CTX::instance()->geom.occWriteParametricCurves;
+}
+
+double opt_geometry_occ_write_step_non_manifold(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->geom.occWriteSTEPNonManifold = val ? 1 : 0;
+  return CTX::instance()->geom.occWriteSTEPNonManifold;
+}
+
 double opt_geometry_occ_use_generic_closest_point(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) CTX::instance()->geom.occUseGenericClosestPoint = (int)val;
+  if(action & GMSH_SET)
+    CTX::instance()->geom.occUseGenericClosestPoint = (int)val;
   return CTX::instance()->geom.occUseGenericClosestPoint;
+}
+
+double opt_geometry_occ_fast_projection(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->geom.occFastProjection = (int)val;
+  return CTX::instance()->geom.occFastProjection;
 }
 
 double opt_geometry_old_circle(OPT_ARGS_NUM)
@@ -5008,6 +5343,39 @@ double opt_mesh_optimize_threshold(OPT_ARGS_NUM)
   return CTX::instance()->mesh.optimizeThreshold;
 }
 
+double opt_mesh_optimize_reconnection_threshold(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(!(action & GMSH_SET_DEFAULT) &&
+       val != CTX::instance()->mesh.optimizeReconnectionThreshold)
+      Msg::SetOnelabChanged(2);
+    CTX::instance()->mesh.optimizeReconnectionThreshold = val;
+  }
+  return CTX::instance()->mesh.optimizeReconnectionThreshold;
+}
+
+double opt_mesh_optimize_reconnection_points(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(!(action & GMSH_SET_DEFAULT) &&
+       (int)val != CTX::instance()->mesh.optimizeReconnectionPoints)
+      Msg::SetOnelabChanged(2);
+    CTX::instance()->mesh.optimizeReconnectionPoints = (int)val;
+  }
+  return CTX::instance()->mesh.optimizeReconnectionPoints;
+}
+
+double opt_mesh_optimize_reconnection_search(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(!(action & GMSH_SET_DEFAULT) &&
+       (int)val != CTX::instance()->mesh.optimizeReconnectionSearch)
+      Msg::SetOnelabChanged(2);
+    CTX::instance()->mesh.optimizeReconnectionSearch = (int)val;
+  }
+  return CTX::instance()->mesh.optimizeReconnectionSearch;
+}
+
 double opt_mesh_optimize_netgen(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
@@ -5062,7 +5430,7 @@ double opt_mesh_num_sub_edges(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.numSubEdges != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.numSubEdges = (int)val;
     if(CTX::instance()->mesh.numSubEdges < 1)
       CTX::instance()->mesh.numSubEdges = 1;
@@ -5090,7 +5458,7 @@ double opt_mesh_explode(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.explode != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.explode = val;
   }
 #if defined(HAVE_FLTK)
@@ -5119,7 +5487,7 @@ double opt_mesh_lc_factor(OPT_ARGS_NUM)
       if(!(action & GMSH_SET_DEFAULT) && val != CTX::instance()->mesh.lcFactor)
         Msg::SetOnelabChanged(2);
       CTX::instance()->mesh.lcFactor = val;
-      if(CTX::instance()->mesh.lcFactor <= 0.0){
+      if(CTX::instance()->mesh.lcFactor <= 0.0) {
         Msg::Error("Mesh element size factor must be > 0");
         CTX::instance()->mesh.lcFactor = 1.;
       }
@@ -5306,7 +5674,7 @@ double opt_mesh_quality_type(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.qualityType != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.qualityType = (int)val;
     if(CTX::instance()->mesh.qualityType < 0 ||
        CTX::instance()->mesh.qualityType > 3)
@@ -5325,7 +5693,7 @@ double opt_mesh_quality_inf(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.qualityInf != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.qualityInf = val;
   }
 #if defined(HAVE_FLTK)
@@ -5340,7 +5708,7 @@ double opt_mesh_quality_sup(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.qualitySup != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.qualitySup = val;
   }
 #if defined(HAVE_FLTK)
@@ -5355,7 +5723,7 @@ double opt_mesh_radius_inf(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.radiusInf != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.radiusInf = val;
   }
 #if defined(HAVE_FLTK)
@@ -5370,7 +5738,7 @@ double opt_mesh_radius_sup(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.radiusSup != val)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.radiusSup = val;
   }
 #if defined(HAVE_FLTK)
@@ -5429,7 +5797,7 @@ double opt_mesh_lines(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.lines != val)
-      CTX::instance()->mesh.changed |= ENT_CURVE;
+      CTX::instance()->meshOptionsChanged(ENT_CURVE);
     CTX::instance()->mesh.lines = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5444,7 +5812,7 @@ double opt_mesh_triangles(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.triangles != val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->mesh.triangles = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5463,7 +5831,7 @@ double opt_mesh_quadrangles(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.quadrangles != val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->mesh.quadrangles = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5482,7 +5850,7 @@ double opt_mesh_tetrahedra(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.tetrahedra != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.tetrahedra = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5501,7 +5869,7 @@ double opt_mesh_hexahedra(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.hexahedra != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.hexahedra = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5520,7 +5888,7 @@ double opt_mesh_prisms(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.prisms != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.prisms = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5539,7 +5907,7 @@ double opt_mesh_pyramids(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.pyramids != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.pyramids = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5558,7 +5926,7 @@ double opt_mesh_trihedra(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.trihedra != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.trihedra = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5572,6 +5940,44 @@ double opt_mesh_trihedra(OPT_ARGS_NUM)
 #endif
   return CTX::instance()->mesh.trihedra;
 }
+double opt_mesh_polygons(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->mesh.polygons != val)
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
+    CTX::instance()->mesh.polygons = (int)val;
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    if(CTX::instance()->mesh.polygons)
+      ((Fl_Menu_Item *)FlGui::instance()->options->mesh.menu->menu())[7].set();
+    else
+      ((Fl_Menu_Item *)FlGui::instance()->options->mesh.menu->menu())[7]
+        .clear();
+  }
+#endif
+  return CTX::instance()->mesh.polygons;
+}
+
+double opt_mesh_polyhedra(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->mesh.polyhedra != val)
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
+    CTX::instance()->mesh.polyhedra = (int)val;
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI)) {
+    if(CTX::instance()->mesh.polyhedra)
+      ((Fl_Menu_Item *)FlGui::instance()->options->mesh.menu->menu())[8].set();
+    else
+      ((Fl_Menu_Item *)FlGui::instance()->options->mesh.menu->menu())[8]
+        .clear();
+  }
+#endif
+  return CTX::instance()->mesh.polyhedra;
+}
+
 
 double opt_mesh_transfinite_tri(OPT_ARGS_NUM)
 {
@@ -5583,7 +5989,7 @@ double opt_mesh_surface_edges(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.surfaceEdges != val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->mesh.surfaceEdges = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5598,7 +6004,7 @@ double opt_mesh_surface_faces(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.surfaceFaces != val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->mesh.surfaceFaces = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5613,7 +6019,7 @@ double opt_mesh_volume_edges(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.volumeEdges != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.volumeEdges = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5628,7 +6034,7 @@ double opt_mesh_volume_faces(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.volumeFaces != val)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->mesh.volumeFaces = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5732,7 +6138,7 @@ double opt_mesh_smooth_normals(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.smoothNormals != val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->mesh.smoothNormals = (int)val;
   }
 #if defined(HAVE_FLTK)
@@ -5759,7 +6165,7 @@ double opt_mesh_angle_smooth_normals(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.angleSmoothNormals != val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->mesh.angleSmoothNormals = val;
   }
 #if defined(HAVE_FLTK)
@@ -5787,7 +6193,7 @@ double opt_mesh_light_lines(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
     if(CTX::instance()->mesh.lightLines != (int)val)
-      CTX::instance()->mesh.changed |= ENT_SURFACE | ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE | ENT_VOLUME);
     CTX::instance()->mesh.lightLines = (int)val;
     if(CTX::instance()->mesh.lightLines < 0 ||
        CTX::instance()->mesh.lightLines > 2)
@@ -5854,6 +6260,12 @@ double opt_mesh_partition_split_mesh_files(OPT_ARGS_NUM)
   if(action & GMSH_SET)
     CTX::instance()->mesh.partitionSplitMeshFiles = (int)val;
   return CTX::instance()->mesh.partitionSplitMeshFiles;
+}
+
+double opt_mesh_partition_split_local_brep(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->mesh.partitionSplitLocalBrep = (int)val;
+  return CTX::instance()->mesh.partitionSplitLocalBrep;
 }
 
 double opt_mesh_partition_save_topology_file(OPT_ARGS_NUM)
@@ -5941,10 +6353,29 @@ double opt_mesh_partition_convert_msh2(OPT_ARGS_NUM)
   return CTX::instance()->mesh.partitionConvertMsh2;
 }
 
+double opt_mesh_overlap_layers(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->mesh.overlapLayers = (int)val;
+  return CTX::instance()->mesh.overlapLayers;
+}
+
 double opt_mesh_create_topology_msh2(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->mesh.createTopologyMsh2 = val;
   return CTX::instance()->mesh.createTopologyMsh2;
+}
+
+double opt_mesh_create_edges(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->mesh.createEdges = val;
+  return CTX::instance()->mesh.createEdges;
+}
+
+double opt_mesh_create_faces(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->mesh.createFaces = val;
+  return CTX::instance()->mesh.createFaces;
 }
 
 double opt_mesh_binary(OPT_ARGS_NUM)
@@ -6143,9 +6574,7 @@ double opt_mesh_recombine_node_repositioning(OPT_ARGS_NUM)
 
 double opt_mesh_recombine_minimum_quality(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->mesh.recombineMinimumQuality = val;
-  }
+  if(action & GMSH_SET) { CTX::instance()->mesh.recombineMinimumQuality = val; }
   return CTX::instance()->mesh.recombineMinimumQuality;
 }
 
@@ -6174,6 +6603,30 @@ double opt_mesh_recombine3d_conformity(OPT_ARGS_NUM)
   return CTX::instance()->mesh.recombine3DConformity;
 }
 
+double opt_mesh_flat_refine_2d(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    CTX::instance()->mesh.flatRefine2D = (int)val;
+  }
+  return CTX::instance()->mesh.flatRefine2D;
+}
+
+double opt_mesh_flat_refine_3d(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    CTX::instance()->mesh.flatRefine3D = (int)val;
+  }
+  return CTX::instance()->mesh.flatRefine3D;
+}
+
+double opt_mesh_flat_optimize_3d(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    CTX::instance()->mesh.flatOptimize3D = (int)val;
+  }
+  return CTX::instance()->mesh.flatOptimize3D;
+}
+
 double opt_mesh_flexible_transfinite(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) {
@@ -6184,9 +6637,7 @@ double opt_mesh_flexible_transfinite(OPT_ARGS_NUM)
 
 double opt_mesh_quasi_transfinite(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->mesh.quasiTransfinite = (int)val;
-  }
+  if(action & GMSH_SET) { CTX::instance()->mesh.quasiTransfinite = (int)val; }
   return CTX::instance()->mesh.quasiTransfinite;
 }
 
@@ -6217,23 +6668,25 @@ double opt_mesh_algo3d(OPT_ARGS_NUM)
       Msg::SetOnelabChanged(2);
     CTX::instance()->mesh.algo3d = (int)val;
     // "New Delaunay" is now simply "Delaunay"
-    if(CTX::instance()->mesh.algo3d == 2)
-      CTX::instance()->mesh.algo3d = 1;
+    if(CTX::instance()->mesh.algo3d == 2) CTX::instance()->mesh.algo3d = 1;
   }
 #if defined(HAVE_FLTK)
   if(FlGui::available() && (action & GMSH_GUI)) {
     switch(CTX::instance()->mesh.algo3d) {
-    case ALGO_3D_FRONTAL:
+    case ALGO_3D_PDEL3D:
       FlGui::instance()->options->mesh.choice[3]->value(1);
       break;
-    case ALGO_3D_HXT:
+    case ALGO_3D_FRONTAL:
       FlGui::instance()->options->mesh.choice[3]->value(2);
       break;
-    case ALGO_3D_MMG3D:
+    case ALGO_3D_HXT:
       FlGui::instance()->options->mesh.choice[3]->value(3);
       break;
-    case ALGO_3D_INITIAL_ONLY:
+    case ALGO_3D_MMG3D:
       FlGui::instance()->options->mesh.choice[3]->value(4);
+      break;
+    case ALGO_3D_INITIAL_ONLY:
+      FlGui::instance()->options->mesh.choice[3]->value(5);
       break;
     case ALGO_3D_DELAUNAY:
     default: FlGui::instance()->options->mesh.choice[3]->value(0); break;
@@ -6241,6 +6694,12 @@ double opt_mesh_algo3d(OPT_ARGS_NUM)
   }
 #endif
   return CTX::instance()->mesh.algo3d;
+}
+
+double opt_mesh_mmg3d_combine_domains(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->mesh.mmg3dCombineDomains = (int)val;
+  return CTX::instance()->mesh.mmg3dCombineDomains;
 }
 
 double opt_mesh_mesh_only_visible(OPT_ARGS_NUM)
@@ -6478,9 +6937,7 @@ double opt_mesh_cgns_import_order(OPT_ARGS_NUM)
 
 double opt_mesh_cgns_import_ignore_bc(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->mesh.cgnsImportIgnoreBC = (int)val;
-  }
+  if(action & GMSH_SET) { CTX::instance()->mesh.cgnsImportIgnoreBC = (int)val; }
   return CTX::instance()->mesh.cgnsImportIgnoreBC;
 }
 
@@ -6502,9 +6959,7 @@ double opt_mesh_cgns_construct_topology(OPT_ARGS_NUM)
 
 double opt_mesh_cgns_export_cpex0045(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    CTX::instance()->mesh.cgnsExportCPEX0045 = (int)val;
-  }
+  if(action & GMSH_SET) { CTX::instance()->mesh.cgnsExportCPEX0045 = (int)val; }
   return CTX::instance()->mesh.cgnsExportCPEX0045;
 }
 
@@ -6528,16 +6983,59 @@ double opt_mesh_voronoi(OPT_ARGS_NUM)
   return CTX::instance()->mesh.voronoi;
 }
 
+double opt_mesh_draw_skin_edges_only(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->mesh.drawSkinEdgesOnly != val)
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
+    CTX::instance()->mesh.drawSkinEdgesOnly = (int)val;
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->mesh.butt[1]->value(
+      CTX::instance()->mesh.drawSkinEdgesOnly);
+#endif
+  return CTX::instance()->mesh.drawSkinEdgesOnly;
+}
+
 double opt_mesh_draw_skin_only(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) { CTX::instance()->mesh.drawSkinOnly = (int)val; }
+  if(action & GMSH_SET) {
+    if(CTX::instance()->mesh.drawSkinOnly != val)
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
+    CTX::instance()->mesh.drawSkinOnly = (int)val;
+  }
+#if defined(HAVE_FLTK)
+  if(FlGui::available() && (action & GMSH_GUI))
+    FlGui::instance()->options->mesh.choice[12]->value(
+      CTX::instance()->mesh.drawSkinOnly);
+#endif
   return CTX::instance()->mesh.drawSkinOnly;
+}
+
+double opt_mesh_draw_unique_edges(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->mesh.drawUniqueEdges != (int)val)
+      CTX::instance()->meshOptionsChanged();
+    CTX::instance()->mesh.drawUniqueEdges = (int)val;
+  }
+  return CTX::instance()->mesh.drawUniqueEdges;
 }
 
 double opt_mesh_save_all(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->mesh.saveAll = (int)val;
   return CTX::instance()->mesh.saveAll;
+}
+
+double opt_mesh_save_views(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) {
+    int v = (int)val;
+    CTX::instance()->mesh.saveViews = (v < 0 || v > 2) ? 0 : v;
+  }
+  return CTX::instance()->mesh.saveViews;
 }
 
 double opt_mesh_save_element_tag_type(OPT_ARGS_NUM)
@@ -6554,8 +7052,7 @@ double opt_mesh_save_parametric(OPT_ARGS_NUM)
 
 double opt_mesh_save_without_orphans(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET)
-    CTX::instance()->mesh.saveWithoutOrphans = (int)val;
+  if(action & GMSH_SET) CTX::instance()->mesh.saveWithoutOrphans = (int)val;
   return CTX::instance()->mesh.saveWithoutOrphans;
 }
 
@@ -6589,19 +7086,22 @@ double opt_mesh_color_carousel(OPT_ARGS_NUM)
     // vertex arrays need to be regenerated only when we color by
     // element type or by partition
     if(CTX::instance()->mesh.colorCarousel != (int)val &&
-       ((val == 0. || val == 3.) || CTX::instance()->pickElements))
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+       (val == 0. || val == 3.))
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+    // the other modes colour by entity, which the merged mesh arrays bake in
+    if(CTX::instance()->mesh.colorCarousel != (int)val)
+      CTX::instance()->entityColorsChanged();
     CTX::instance()->mesh.colorCarousel = (int)val;
     if(CTX::instance()->mesh.colorCarousel < 0 ||
        CTX::instance()->mesh.colorCarousel > 3)
       CTX::instance()->mesh.colorCarousel = 0;
+    // the labels take the colours of what they name
+    stringColorsChanged();
   }
 #if defined(HAVE_FLTK)
-  if(FlGui::available() && (action & GMSH_GUI)) {
+  if(FlGui::available() && (action & GMSH_GUI))
     FlGui::instance()->options->mesh.choice[4]->value(
       CTX::instance()->mesh.colorCarousel);
-    drawContext::global()->resetFontTextures();
-  }
 #endif
   return CTX::instance()->mesh.colorCarousel;
 }
@@ -6642,73 +7142,40 @@ double opt_mesh_zone_definition(OPT_ARGS_NUM)
   return CTX::instance()->mesh.zoneDefinition;
 }
 
-#if !defined(HAVE_MESH)
-static void GetStatistics(double stat[50])
-{
-  for(int i = 0; i < 50; i++) stat[i] = 0;
-}
-#endif
+double opt_mesh_nb_nodes(OPT_ARGS_NUM) { return meshStatistic(4); }
 
-double opt_mesh_nb_nodes(OPT_ARGS_NUM)
-{
-  double s[50];
-  GetStatistics(s);
-  return s[4];
-}
+double opt_mesh_nb_triangles(OPT_ARGS_NUM) { return meshStatistic(7); }
 
-double opt_mesh_nb_triangles(OPT_ARGS_NUM)
+double opt_mesh_nb_quadrangles(OPT_ARGS_NUM) { return meshStatistic(8); }
+
+double opt_mesh_nb_tetrahedra(OPT_ARGS_NUM) { return meshStatistic(9); }
+
+double opt_mesh_nb_hexahedra(OPT_ARGS_NUM) { return meshStatistic(10); }
+
+double opt_mesh_nb_edges(OPT_ARGS_NUM)
 {
-  double s[50];
-  GetStatistics(s);
-  return s[7];
+  return (double)GModel::current()->getNumMEdges();
 }
 
-double opt_mesh_nb_quadrangles(OPT_ARGS_NUM)
+double opt_mesh_nb_faces(OPT_ARGS_NUM)
 {
-  double s[50];
-  GetStatistics(s);
-  return s[8];
+  return (double)GModel::current()->getNumMFaces();
 }
 
-double opt_mesh_nb_tetrahedra(OPT_ARGS_NUM)
-{
-  double s[50];
-  GetStatistics(s);
-  return s[9];
-}
+double opt_mesh_nb_prisms(OPT_ARGS_NUM) { return meshStatistic(11); }
 
-double opt_mesh_nb_hexahedra(OPT_ARGS_NUM)
-{
-  double s[50];
-  GetStatistics(s);
-  return s[10];
-}
+double opt_mesh_nb_pyramids(OPT_ARGS_NUM) { return meshStatistic(12); }
 
-double opt_mesh_nb_prisms(OPT_ARGS_NUM)
-{
-  double s[50];
-  GetStatistics(s);
-  return s[11];
-}
+double opt_mesh_nb_trihedra(OPT_ARGS_NUM) { return meshStatistic(13); }
 
-double opt_mesh_nb_pyramids(OPT_ARGS_NUM)
-{
-  double s[50];
-  GetStatistics(s);
-  return s[12];
-}
+double opt_mesh_nb_polygons(OPT_ARGS_NUM) { return meshStatistic(46); }
 
-double opt_mesh_nb_trihedra(OPT_ARGS_NUM)
-{
-  double s[50];
-  GetStatistics(s);
-  return s[13];
-}
+double opt_mesh_nb_polyhedra(OPT_ARGS_NUM) { return meshStatistic(47); }
 
 double opt_mesh_cpu_time(OPT_ARGS_NUM)
 {
   return CTX::instance()->mesh.timer[0] + CTX::instance()->mesh.timer[1] +
-    CTX::instance()->mesh.timer[2];
+         CTX::instance()->mesh.timer[2];
 }
 
 double opt_mesh_min_quality(OPT_ARGS_NUM)
@@ -6723,11 +7190,7 @@ double opt_mesh_avg_quality(OPT_ARGS_NUM)
 
 double opt_mesh_partition_num(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET) {
-    const int ival = std::max(0, (int)val);
-    CTX::instance()->mesh.numPartitions = ival;
-    CTX::instance()->mesh.metisAlgorithm = (ival <= 8) ? 1 : 2;
-  }
+  if(action & GMSH_SET) CTX::instance()->mesh.numPartitions = (int)val;
   return CTX::instance()->mesh.numPartitions;
 }
 
@@ -6862,6 +7325,18 @@ double opt_mesh_ignore_parametrization(OPT_ARGS_NUM)
   return CTX::instance()->mesh.ignoreParametrizationMsh4;
 }
 
+double opt_mesh_ignore_edges(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->mesh.ignoreEdges = (int)val;
+  return CTX::instance()->mesh.ignoreEdges;
+}
+
+double opt_mesh_ignore_faces(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->mesh.ignoreFaces = (int)val;
+  return CTX::instance()->mesh.ignoreFaces;
+}
+
 double opt_mesh_quadqs_sizemap_method(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->mesh.quadqsSizemapMethod = (int)val;
@@ -6877,20 +7352,20 @@ double opt_mesh_quadqs_remeshing_boldness(OPT_ARGS_NUM)
 
 double opt_mesh_quadqs_topo_optim_methods(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET)
-    CTX::instance()->mesh.quadqsTopoOptimMethods = (int)val;
+  if(action & GMSH_SET) CTX::instance()->mesh.quadqsTopoOptimMethods = (int)val;
   return CTX::instance()->mesh.quadqsTopoOptimMethods;
 }
 
-double opt_mesh_quadqs_scaling_on_triangulation(OPT_ARGS_NUM) {
-  if(action & GMSH_SET) CTX::instance()->mesh.quadqsScalingOnTriangulation = (double)val;
+double opt_mesh_quadqs_scaling_on_triangulation(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET)
+    CTX::instance()->mesh.quadqsScalingOnTriangulation = (double)val;
   return CTX::instance()->mesh.quadqsScalingOnTriangulation;
 }
 
 double opt_mesh_old_initial_delaunay_2d(OPT_ARGS_NUM)
 {
-  if(action & GMSH_SET)
-    CTX::instance()->mesh.oldInitialDelaunay2D = (int)val;
+  if(action & GMSH_SET) CTX::instance()->mesh.oldInitialDelaunay2D = (int)val;
   return CTX::instance()->mesh.oldInitialDelaunay2D;
 }
 
@@ -7121,6 +7596,12 @@ double opt_post_save_interpolation_matrices(OPT_ARGS_NUM)
   return CTX::instance()->post.saveInterpolationMatrices;
 }
 
+double opt_post_save_adapted(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->post.saveAdapted = (int)val;
+  return CTX::instance()->post.saveAdapted;
+}
+
 double opt_post_double_clicked_graph_point_x(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->post.doubleClickedGraphPointX = val;
@@ -7183,9 +7664,6 @@ double opt_view_timestep(OPT_ARGS_NUM)
         opt->timeStep = 0;
       else if(opt->timeStep < 0)
         opt->timeStep = data->getNumTimeSteps() - 1;
-      if(data->getAdaptiveData())
-        data->getAdaptiveData()->changeResolution(
-          opt->timeStep, opt->maxRecursionLevel, opt->targetError);
       opt->currentTime = data->getTime(opt->timeStep);
     }
     if(view) view->setChanged(true);
@@ -7231,8 +7709,11 @@ double opt_view_min(OPT_ARGS_NUM)
 #if defined(HAVE_POST)
   GET_VIEWd(0.);
   if(!data) return 0.;
-  // use adaptive data if available
-  return view->getData(true)->getMin();
+  // (of the refined data if the view is adaptive)
+  view->adapt();
+  double min = view->getData(true)->getMin(), max = min;
+  view->widenAdaptedRange(min, max);
+  return min;
 #else
   return 0.;
 #endif
@@ -7243,8 +7724,11 @@ double opt_view_max(OPT_ARGS_NUM)
 #if defined(HAVE_POST)
   GET_VIEWd(0.);
   if(!data) return 0.;
-  // use adaptive data if available
-  return view->getData(true)->getMax();
+  // (of the refined data if the view is adaptive)
+  view->adapt();
+  double max = view->getData(true)->getMax(), min = max;
+  view->widenAdaptedRange(min, max);
+  return max;
 #else
   return 0.;
 #endif
@@ -7255,9 +7739,9 @@ double opt_view_min_visible(OPT_ARGS_NUM)
 #if defined(HAVE_POST)
   GET_VIEW(0.);
   if(!data) return 0.;
-  int tensorRep = (opt->tensorType == PViewOptions::VonMises) ?
-                    0 :
-                    (opt->tensorType == PViewOptions::MaxEigenValue) ? 1 : 2;
+  int tensorRep = (opt->tensorType == PViewOptions::VonMises)      ? 0 :
+                  (opt->tensorType == PViewOptions::MaxEigenValue) ? 1 :
+                                                                     2;
   return data->getMin(opt->timeStep, true, tensorRep, opt->forceNumComponents,
                       opt->componentMap);
 #else
@@ -7270,9 +7754,9 @@ double opt_view_max_visible(OPT_ARGS_NUM)
 #if defined(HAVE_POST)
   GET_VIEW(0.);
   if(!data) return 0.;
-  int tensorRep = (opt->tensorType == PViewOptions::VonMises) ?
-                    0 :
-                    (opt->tensorType == PViewOptions::MinEigenValue) ? 2 : 1;
+  int tensorRep = (opt->tensorType == PViewOptions::VonMises)      ? 0 :
+                  (opt->tensorType == PViewOptions::MinEigenValue) ? 2 :
+                                                                     1;
   return data->getMax(opt->timeStep, true, tensorRep, opt->forceNumComponents,
                       opt->componentMap);
 #else
@@ -7777,24 +8261,6 @@ double opt_view_displacement_factor(OPT_ARGS_NUM)
 #endif
 }
 
-double opt_view_fake_transparency(OPT_ARGS_NUM)
-{
-#if defined(HAVE_POST)
-  GET_VIEWo(0.);
-  if(action & GMSH_SET) {
-    opt->fakeTransparency = (int)val;
-    if(view) view->setChanged(true);
-  }
-#if defined(HAVE_FLTK)
-  if(_gui_action_valid(action, num))
-    FlGui::instance()->options->view.butt[24]->value(opt->fakeTransparency);
-#endif
-  return opt->fakeTransparency;
-#else
-  return 0.;
-#endif
-}
-
 double opt_view_explode(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
@@ -7875,11 +8341,8 @@ double opt_view_adapt_visualization_grid(OPT_ARGS_NUM)
   if(action & GMSH_SET) {
     opt->adaptVisualizationGrid = (int)val;
     if(data) {
-      if(opt->adaptVisualizationGrid)
-        data->initAdaptiveData(opt->timeStep, opt->maxRecursionLevel,
-                               opt->targetError);
-      else
-        data->destroyAdaptiveData();
+      // (refined when used, see PView::adapt())
+      if(!opt->adaptVisualizationGrid) data->destroyAdaptiveData();
       view->setChanged(true);
     }
   }
@@ -7896,17 +8359,31 @@ double opt_view_adapt_visualization_grid(OPT_ARGS_NUM)
 #endif
 }
 
+double opt_view_adapt_skin_only(OPT_ARGS_NUM)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0.);
+  if(action & GMSH_SET) {
+    opt->adaptSkinOnly = (int)val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num))
+    FlGui::instance()->options->view.choice[18]->value(opt->adaptSkinOnly);
+#endif
+  return opt->adaptSkinOnly;
+#else
+  return 0.;
+#endif
+}
+
 double opt_view_max_recursion_level(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
   GET_VIEW(0.);
   if(action & GMSH_SET) {
     opt->maxRecursionLevel = (int)val;
-    if(data && data->getAdaptiveData()) {
-      data->getAdaptiveData()->changeResolution(
-        opt->timeStep, opt->maxRecursionLevel, opt->targetError);
-      view->setChanged(true);
-    }
+    if(view) view->setChanged(true);
   }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
@@ -7925,11 +8402,7 @@ double opt_view_target_error(OPT_ARGS_NUM)
   GET_VIEW(0.);
   if(action & GMSH_SET) {
     opt->targetError = val;
-    if(data && data->getAdaptiveData()) {
-      data->getAdaptiveData()->changeResolution(
-        opt->timeStep, opt->maxRecursionLevel, opt->targetError);
-      view->setChanged(true);
-    }
+    if(view) view->setChanged(true);
   }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
@@ -8209,49 +8682,49 @@ double opt_view_axes_zmax(OPT_ARGS_NUM)
 #endif
 }
 
-double opt_view_axes_tics0(OPT_ARGS_NUM)
+double opt_view_axes_ticks0(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0.);
-  if(action & GMSH_SET) { opt->axesTics[0] = val; }
+  if(action & GMSH_SET) { opt->axesTicks[0] = val; }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
-    FlGui::instance()->options->view.value[3]->value(opt->axesTics[0]);
+    FlGui::instance()->options->view.value[3]->value(opt->axesTicks[0]);
   }
 #endif
-  return opt->axesTics[0];
+  return opt->axesTicks[0];
 #else
   return 0.;
 #endif
 }
 
-double opt_view_axes_tics1(OPT_ARGS_NUM)
+double opt_view_axes_ticks1(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0.);
-  if(action & GMSH_SET) { opt->axesTics[1] = val; }
+  if(action & GMSH_SET) { opt->axesTicks[1] = val; }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
-    FlGui::instance()->options->view.value[4]->value(opt->axesTics[1]);
+    FlGui::instance()->options->view.value[4]->value(opt->axesTicks[1]);
   }
 #endif
-  return opt->axesTics[1];
+  return opt->axesTicks[1];
 #else
   return 0.;
 #endif
 }
 
-double opt_view_axes_tics2(OPT_ARGS_NUM)
+double opt_view_axes_ticks2(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0.);
-  if(action & GMSH_SET) { opt->axesTics[2] = val; }
+  if(action & GMSH_SET) { opt->axesTicks[2] = val; }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
-    FlGui::instance()->options->view.value[5]->value(opt->axesTics[2]);
+    FlGui::instance()->options->view.value[5]->value(opt->axesTicks[2]);
   }
 #endif
-  return opt->axesTics[2];
+  return opt->axesTicks[2];
 #else
   return 0.;
 #endif
@@ -8662,6 +9135,54 @@ double opt_view_draw_trihedra(OPT_ARGS_NUM)
   return 0.;
 #endif
 }
+double opt_view_draw_polygons(OPT_ARGS_NUM)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0.);
+  if(action & GMSH_SET) {
+    opt->drawPolygons = (int)val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num)) {
+    if(opt->drawPolygons)
+      ((Fl_Menu_Item *)FlGui::instance()->options->view.menu[1]->menu())[9]
+        .set();
+    else
+      ((Fl_Menu_Item *)FlGui::instance()->options->view.menu[1]->menu())[9]
+        .clear();
+  }
+#endif
+  return opt->drawPolygons;
+#else
+  return 0.;
+#endif
+}
+
+double opt_view_draw_polyhedra(OPT_ARGS_NUM)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0.);
+  if(action & GMSH_SET) {
+    opt->drawPolyhedra = (int)val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num)) {
+    if(opt->drawPolyhedra)
+      ((Fl_Menu_Item *)FlGui::instance()->options->view.menu[1]->menu())[10]
+        .set();
+    else
+      ((Fl_Menu_Item *)FlGui::instance()->options->view.menu[1]->menu())[10]
+        .clear();
+  }
+#endif
+  return opt->drawPolyhedra;
+#else
+  return 0.;
+#endif
+}
+
 
 double opt_view_draw_scalars(OPT_ARGS_NUM)
 {
@@ -8735,6 +9256,24 @@ double opt_view_draw_tensors(OPT_ARGS_NUM)
 #endif
 }
 
+double opt_view_draw_skin_edges_only(OPT_ARGS_NUM)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0.);
+  if(action & GMSH_SET) {
+    opt->drawSkinEdgesOnly = (int)val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num))
+    FlGui::instance()->options->view.butt[1]->value(opt->drawSkinEdgesOnly);
+#endif
+  return opt->drawSkinEdgesOnly;
+#else
+  return 0.;
+#endif
+}
+
 double opt_view_draw_skin_only(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
@@ -8748,6 +9287,25 @@ double opt_view_draw_skin_only(OPT_ARGS_NUM)
     FlGui::instance()->options->view.butt[2]->value(opt->drawSkinOnly);
 #endif
   return opt->drawSkinOnly;
+#else
+  return 0.;
+#endif
+}
+
+double opt_view_scale_threshold(OPT_ARGS_NUM)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0.);
+  if(action & GMSH_SET) {
+    opt->scaleThreshold = val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num)) {
+    FlGui::instance()->options->view.value[35]->value(opt->scaleThreshold);
+  }
+#endif
+  return opt->scaleThreshold;
 #else
   return 0.;
 #endif
@@ -8876,7 +9434,7 @@ double opt_view_center_glyphs(OPT_ARGS_NUM)
   GET_VIEWo(0.);
   if(action & GMSH_SET) {
     opt->centerGlyphs = (int)val;
-    if(opt->centerGlyphs < 0 || opt->centerGlyphs > 2) opt->glyphLocation = 0;
+    if(opt->centerGlyphs < 0 || opt->centerGlyphs > 2) opt->centerGlyphs = 0;
     if(view) view->setChanged(true);
   }
 #if defined(HAVE_FLTK)
@@ -8909,7 +9467,12 @@ double opt_view_line_width(OPT_ARGS_NUM)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0.);
-  if(action & GMSH_SET) { opt->lineWidth = val; }
+  if(action & GMSH_SET) {
+    // whether there is a width at all decides whether the trajectories of the
+    // points over the time steps go into the arrays
+    if(view && (val == 0.) != (opt->lineWidth == 0.)) view->setChanged(true);
+    opt->lineWidth = val;
+  }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num))
     FlGui::instance()->options->view.value[62]->value(opt->lineWidth);
@@ -8955,26 +9518,6 @@ double opt_view_line_type(OPT_ARGS_NUM)
   }
 #endif
   return opt->lineType;
-#else
-  return 0.;
-#endif
-}
-
-double opt_view_colormap_alpha(OPT_ARGS_NUM)
-{
-#if defined(HAVE_POST)
-  GET_VIEWo(0.);
-  if(action & GMSH_SET) {
-    opt->colorTable.dpar[COLORTABLE_ALPHA] = val;
-    ColorTable_Recompute(&opt->colorTable);
-    if(view) view->setChanged(true);
-  }
-#if defined(HAVE_FLTK)
-  if(_gui_action_valid(action, num)) {
-    FlGui::instance()->options->view.colorbar->redraw();
-  }
-#endif
-  return opt->colorTable.dpar[COLORTABLE_ALPHA];
 #else
   return 0.;
 #endif
@@ -9086,14 +9629,16 @@ double opt_view_colormap_number(OPT_ARGS_NUM)
   GET_VIEWo(0.);
   if(action & GMSH_SET) {
     int n = (int)val;
-    if(n < 0) n = 24;
-    if(n > 24) n = 0;
+    if(n < 0) n = ColorTable_NumPredefined() - 1;
+    if(n >= ColorTable_NumPredefined()) n = 0;
     opt->colorTable.ipar[COLORTABLE_NUMBER] = n;
     ColorTable_Recompute(&opt->colorTable);
     if(view) view->setChanged(true);
   }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
+    FlGui::instance()->options->view.choice[17]->value(
+      opt->colorTable.ipar[COLORTABLE_NUMBER]);
     FlGui::instance()->options->view.colorbar->redraw();
   }
 #endif
@@ -9528,6 +10073,18 @@ double opt_print_text(OPT_ARGS_NUM)
   return CTX::instance()->print.text;
 }
 
+double opt_print_scale_pixel_sizes(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->print.scalePixelSizes = (int)val;
+  return CTX::instance()->print.scalePixelSizes;
+}
+
+double opt_print_supersampling(OPT_ARGS_NUM)
+{
+  if(action & GMSH_SET) CTX::instance()->print.supersampling = (int)val;
+  return CTX::instance()->print.supersampling;
+}
+
 double opt_print_tex_as_equation(OPT_ARGS_NUM)
 {
   if(action & GMSH_SET) CTX::instance()->print.texAsEquation = (int)val;
@@ -9700,35 +10257,51 @@ unsigned int opt_general_color_foreground(OPT_ARGS_COL)
 
 unsigned int opt_general_color_text(OPT_ARGS_COL)
 {
-  if(action & GMSH_SET) CTX::instance()->color.text = val;
+  if(action & GMSH_SET) {
+    CTX::instance()->color.text = val;
+    stringColorsChanged();
+  }
 #if defined(HAVE_FLTK)
   CCC(CTX::instance()->color.text,
       FlGui::instance()->options->general.color[3]);
-  drawContext::global()->resetFontTextures();
 #endif
   return CTX::instance()->color.text;
 }
 
 unsigned int opt_general_color_axes(OPT_ARGS_COL)
 {
-  if(action & GMSH_SET) CTX::instance()->color.axes = val;
+  if(action & GMSH_SET) {
+    CTX::instance()->color.axes = val;
+    stringColorsChanged();
+  }
 #if defined(HAVE_FLTK)
   CCC(CTX::instance()->color.axes,
       FlGui::instance()->options->general.color[4]);
-  drawContext::global()->resetFontTextures();
 #endif
   return CTX::instance()->color.axes;
 }
 
 unsigned int opt_general_color_small_axes(OPT_ARGS_COL)
 {
-  if(action & GMSH_SET) CTX::instance()->color.smallAxes = val;
+  if(action & GMSH_SET) {
+    CTX::instance()->color.smallAxes = val;
+    stringColorsChanged();
+  }
 #if defined(HAVE_FLTK)
   CCC(CTX::instance()->color.smallAxes,
       FlGui::instance()->options->general.color[5]);
-  drawContext::global()->resetFontTextures();
 #endif
   return CTX::instance()->color.smallAxes;
+}
+
+unsigned int opt_general_color_query(OPT_ARGS_COL)
+{
+  if(action & GMSH_SET) { CTX::instance()->color.query = val; }
+#if defined(HAVE_FLTK)
+  CCC(CTX::instance()->color.query,
+      FlGui::instance()->options->general.color[9]);
+#endif
+  return CTX::instance()->color.query;
 }
 
 unsigned int opt_general_color_ambient_light(OPT_ARGS_COL)
@@ -9904,7 +10477,10 @@ unsigned int opt_mesh_color_lines(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.line != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+    // the merged mesh arrays bake it in as the colour of the edges
+    if(CTX::instance()->color.mesh.line != val)
+      CTX::instance()->entityColorsChanged();
     CTX::instance()->color.mesh.line = val;
   }
 #if defined(HAVE_FLTK)
@@ -9921,7 +10497,7 @@ unsigned int opt_mesh_color_triangles(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.triangle != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->color.mesh.triangle = val;
   }
 #if defined(HAVE_FLTK)
@@ -9938,7 +10514,7 @@ unsigned int opt_mesh_color_quadrangles(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.quadrangle != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_SURFACE;
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
     CTX::instance()->color.mesh.quadrangle = val;
   }
 #if defined(HAVE_FLTK)
@@ -9955,7 +10531,7 @@ unsigned int opt_mesh_color_tetrahedra(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.tetrahedron != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->color.mesh.tetrahedron = val;
   }
 #if defined(HAVE_FLTK)
@@ -9972,7 +10548,7 @@ unsigned int opt_mesh_color_hexahedra(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.hexahedron != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->color.mesh.hexahedron = val;
   }
 #if defined(HAVE_FLTK)
@@ -9989,7 +10565,7 @@ unsigned int opt_mesh_color_prisms(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.prism != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->color.mesh.prism = val;
   }
 #if defined(HAVE_FLTK)
@@ -10006,7 +10582,7 @@ unsigned int opt_mesh_color_pyramid(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.pyramid != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->color.mesh.pyramid = val;
   }
 #if defined(HAVE_FLTK)
@@ -10023,7 +10599,7 @@ unsigned int opt_mesh_color_trihedron(OPT_ARGS_COL)
     // element type
     if(CTX::instance()->color.mesh.trihedron != val &&
        CTX::instance()->mesh.colorCarousel == 0)
-      CTX::instance()->mesh.changed |= ENT_VOLUME;
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
     CTX::instance()->color.mesh.trihedron = val;
   }
 #if defined(HAVE_FLTK)
@@ -10032,13 +10608,43 @@ unsigned int opt_mesh_color_trihedron(OPT_ARGS_COL)
 #endif
   return CTX::instance()->color.mesh.trihedron;
 }
+unsigned int opt_mesh_color_polygon(OPT_ARGS_COL)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->color.mesh.polygon != val &&
+       CTX::instance()->mesh.colorCarousel == 0)
+      CTX::instance()->meshOptionsChanged(ENT_SURFACE);
+    CTX::instance()->color.mesh.polygon = val;
+  }
+#if defined(HAVE_FLTK)
+  CCC(CTX::instance()->color.mesh.polygon,
+      FlGui::instance()->options->mesh.color[10]);
+#endif
+  return CTX::instance()->color.mesh.polygon;
+}
+
+unsigned int opt_mesh_color_polyhedron(OPT_ARGS_COL)
+{
+  if(action & GMSH_SET) {
+    if(CTX::instance()->color.mesh.polyhedron != val &&
+       CTX::instance()->mesh.colorCarousel == 0)
+      CTX::instance()->meshOptionsChanged(ENT_VOLUME);
+    CTX::instance()->color.mesh.polyhedron = val;
+  }
+#if defined(HAVE_FLTK)
+  CCC(CTX::instance()->color.mesh.polyhedron,
+      FlGui::instance()->options->mesh.color[11]);
+#endif
+  return CTX::instance()->color.mesh.polyhedron;
+}
+
 
 unsigned int opt_mesh_color_tangents(OPT_ARGS_COL)
 {
   if(action & GMSH_SET) { CTX::instance()->color.mesh.tangents = val; }
 #if defined(HAVE_FLTK)
   CCC(CTX::instance()->color.mesh.tangents,
-      FlGui::instance()->options->mesh.color[10]);
+      FlGui::instance()->options->mesh.color[12]);
 #endif
   return CTX::instance()->color.mesh.tangents;
 }
@@ -10048,7 +10654,7 @@ unsigned int opt_mesh_color_normals(OPT_ARGS_COL)
   if(action & GMSH_SET) { CTX::instance()->color.mesh.normals = val; }
 #if defined(HAVE_FLTK)
   CCC(CTX::instance()->color.mesh.normals,
-      FlGui::instance()->options->mesh.color[11]);
+      FlGui::instance()->options->mesh.color[13]);
 #endif
   return CTX::instance()->color.mesh.normals;
 }
@@ -10061,12 +10667,15 @@ unsigned int opt_mesh_color_(int i, OPT_ARGS_COL)
     // partition
     if(CTX::instance()->color.mesh.carousel[n] != val &&
        CTX::instance()->mesh.colorCarousel == 3)
-      CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+      CTX::instance()->meshOptionsChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+    // the merged mesh arrays bake in the colours of the entities
+    if(CTX::instance()->color.mesh.carousel[n] != val)
+      CTX::instance()->entityColorsChanged();
     CTX::instance()->color.mesh.carousel[n] = val;
   }
 #if defined(HAVE_FLTK)
   CCC(CTX::instance()->color.mesh.carousel[n],
-      FlGui::instance()->options->mesh.color[12 + n]);
+      FlGui::instance()->options->mesh.color[14 + n]);
 #endif
   return CTX::instance()->color.mesh.carousel[n];
 }
@@ -10323,6 +10932,44 @@ unsigned int opt_view_color_trihedra(OPT_ARGS_COL)
 #endif
 }
 
+unsigned int opt_view_color_polygons(OPT_ARGS_COL)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0);
+  if(action & GMSH_SET) {
+    opt->color.polygon = val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num)) {
+    CCC(opt->color.polygon, FlGui::instance()->options->view.color[9]);
+  }
+#endif
+  return opt->color.polygon;
+#else
+  return 0;
+#endif
+}
+
+unsigned int opt_view_color_polyhedra(OPT_ARGS_COL)
+{
+#if defined(HAVE_POST)
+  GET_VIEWo(0);
+  if(action & GMSH_SET) {
+    opt->color.polyhedron = val;
+    if(view) view->setChanged(true);
+  }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num)) {
+    CCC(opt->color.polyhedron, FlGui::instance()->options->view.color[10]);
+  }
+#endif
+  return opt->color.polyhedron;
+#else
+  return 0;
+#endif
+}
+
 unsigned int opt_view_color_tangents(OPT_ARGS_COL)
 {
 #if defined(HAVE_POST)
@@ -10333,7 +10980,7 @@ unsigned int opt_view_color_tangents(OPT_ARGS_COL)
   }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
-    CCC(opt->color.tangents, FlGui::instance()->options->view.color[9]);
+    CCC(opt->color.tangents, FlGui::instance()->options->view.color[11]);
   }
 #endif
   return opt->color.tangents;
@@ -10352,7 +10999,7 @@ unsigned int opt_view_color_normals(OPT_ARGS_COL)
   }
 #if defined(HAVE_FLTK)
   if(_gui_action_valid(action, num)) {
-    CCC(opt->color.normals, FlGui::instance()->options->view.color[10]);
+    CCC(opt->color.normals, FlGui::instance()->options->view.color[12]);
   }
 #endif
   return opt->color.normals;
@@ -10365,12 +11012,13 @@ unsigned int opt_view_color_text2d(OPT_ARGS_COL)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0);
-  if(action & GMSH_SET) { opt->color.text2d = val; }
-#if defined(HAVE_FLTK)
-  if(_gui_action_valid(action, num)) {
-    CCC(opt->color.text2d, FlGui::instance()->options->view.color[11]);
-    drawContext::global()->resetFontTextures();
+  if(action & GMSH_SET) {
+    opt->color.text2d = val;
+    stringColorsChanged();
   }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num))
+    CCC(opt->color.text2d, FlGui::instance()->options->view.color[13]);
 #endif
   return opt->color.text2d;
 #else
@@ -10382,12 +11030,13 @@ unsigned int opt_view_color_text3d(OPT_ARGS_COL)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0);
-  if(action & GMSH_SET) { opt->color.text3d = val; }
-#if defined(HAVE_FLTK)
-  if(_gui_action_valid(action, num)) {
-    CCC(opt->color.text3d, FlGui::instance()->options->view.color[12]);
-    drawContext::global()->resetFontTextures();
+  if(action & GMSH_SET) {
+    opt->color.text3d = val;
+    stringColorsChanged();
   }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num))
+    CCC(opt->color.text3d, FlGui::instance()->options->view.color[14]);
 #endif
   return opt->color.text3d;
 #else
@@ -10399,12 +11048,13 @@ unsigned int opt_view_color_axes(OPT_ARGS_COL)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0);
-  if(action & GMSH_SET) { opt->color.axes = val; }
-#if defined(HAVE_FLTK)
-  if(_gui_action_valid(action, num)) {
-    CCC(opt->color.axes, FlGui::instance()->options->view.color[13]);
-    drawContext::global()->resetFontTextures();
+  if(action & GMSH_SET) {
+    opt->color.axes = val;
+    stringColorsChanged();
   }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num))
+    CCC(opt->color.axes, FlGui::instance()->options->view.color[15]);
 #endif
   return opt->color.axes;
 #else
@@ -10416,12 +11066,13 @@ unsigned int opt_view_color_background2d(OPT_ARGS_COL)
 {
 #if defined(HAVE_POST)
   GET_VIEWo(0);
-  if(action & GMSH_SET) { opt->color.background2d = val; }
-#if defined(HAVE_FLTK)
-  if(_gui_action_valid(action, num)) {
-    CCC(opt->color.background2d, FlGui::instance()->options->view.color[14]);
-    drawContext::global()->resetFontTextures();
+  if(action & GMSH_SET) {
+    opt->color.background2d = val;
+    stringColorsChanged();
   }
+#if defined(HAVE_FLTK)
+  if(_gui_action_valid(action, num))
+    CCC(opt->color.background2d, FlGui::instance()->options->view.color[16]);
 #endif
   return opt->color.background2d;
 #else

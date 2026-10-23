@@ -1,43 +1,43 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
 #include <string>
-#include <iostream>
-#include "GmshGlobal.h"
-#include <string.h>
 #include "drawContext.h"
-#include "Trackball.h"
+#include "glMatrix.h"
 #include "GModel.h"
 #include "Context.h"
+#include "glyphList.h"
 #include "Numeric.h"
 #include "gl2ps.h"
 
 #define SQU(a) ((a) * (a))
 
-static int drawTics(drawContext *ctx, int comp, double n, std::string &format,
+static int drawTicks(drawContext *ctx, int comp, double n, std::string &format,
                     std::string &label, double p1[3], double p2[3],
-                    double perp[3], int mikado, double pixelfact,
+                    double perp[3], double pixelfact,
                     double value_p1[3], double value_p2[3])
 {
-  // draws n tic marks (in direction perp) and labels along the line p1->p2
+  // draws n tick marks (in direction perp) and labels along the line p1->p2
 
   double t[3] = {p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]};
   double l = norme(t);
   double value_t[3] = {value_p2[0] - value_p1[0], value_p2[1] - value_p1[1],
                        value_p2[2] - value_p1[2]};
   double value_l = norme(value_t);
-  double w = 10 * pixelfact; // tic marks are 10 pixels long
+  double w = 10 * pixelfact; // tick marks are 10 pixels long
   double w2 = w * 1.25; // distance to labels
 
   // draw label at the end of the axis
   ctx->drawString(label, p2[0] + t[0] * w2, p2[1] + t[1] * w2,
                   p2[2] + t[2] * w2);
 
-  // return number of tics in special cases
+  // return number of ticks in special cases
   if(n < 2.) return 0;
-  if(format.empty()) return n;
+  // with no format of the user's, the automatic one (View.AxesTics 0 is
+  // what hides the ticks)
+  std::string fmt = format.empty() ? "%.3g" : format;
 
   // select perp direction automatically if it is not provided
   double lp = norme(perp);
@@ -50,16 +50,19 @@ static int drawTics(drawContext *ctx, int comp, double n, std::string &format,
     }
   }
 
-  // reduce number of tics depending on font size and length of axis on screen
+  // reduce number of ticks depending on font size and length of axis on
+  // screen; world2Viewport is in true pixels, the font metrics in those of the
+  // window
+  double hr = ctx->highResolutionPixelFactor();
   drawContext::global()->setFont(CTX::instance()->glFontEnum,
                                  CTX::instance()->glFontSize);
   char tmp[256];
-  sprintf(tmp, format.c_str(), -M_PI * 1.e4);
+  snprintf(tmp, sizeof(tmp), fmt.c_str(), -M_PI * 1.e4);
   double win1[3], win2[3];
   ctx->world2Viewport(p1, win1);
   ctx->world2Viewport(p2, win2);
   double winl = sqrt(SQU(win2[0] - win1[0]) + SQU(win2[1] - win1[1]));
-  double strl = drawContext::global()->getStringWidth(tmp);
+  double strl = hr * drawContext::global()->getStringWidth(tmp);
   if((n - 1) * strl > winl) n = (int)(winl / strl) + 1;
   if(n <= 1) {
     if(comp < 0) // ruler
@@ -68,7 +71,7 @@ static int drawTics(drawContext *ctx, int comp, double n, std::string &format,
       return 0;
   }
 
-  // draw n tics
+  // draw n ticks
   double step = l / (double)(n - 1);
   double value_step = value_l / (double)(n - 1);
 
@@ -84,27 +87,27 @@ static int drawTics(drawContext *ctx, int comp, double n, std::string &format,
                          value_p1[1] + value_t[1] * value_d,
                          value_p1[2] + value_t[2] * value_d};
 
-    glBegin(GL_LINES);
-    glVertex3d(p[0], p[1], p[2]);
-    glVertex3d(q[0], q[1], q[2]);
-    glEnd();
+    gmshBegin(GL_LINES);
+    gmshVertex3d(p[0], p[1], p[2]);
+    gmshVertex3d(q[0], q[1], q[2]);
+    gmshEnd();
 
-    // draw tic labels
+    // draw tick labels
     if(comp < 0) // display the length value (ruler-mode, starting at 0)
-      sprintf(tmp, format.c_str(), value_d);
+      snprintf(tmp, sizeof(tmp), fmt.c_str(), value_d);
     else // display the coordinate value
-      sprintf(tmp, format.c_str(), value_p[comp]);
+      snprintf(tmp, sizeof(tmp), fmt.c_str(), value_p[comp]);
     double winp[3], winr[3];
     ctx->world2Viewport(p, winp);
     ctx->world2Viewport(r, winr);
     if(fabs(winr[0] - winp[0]) < 2.) // center align
-      winr[0] -= drawContext::global()->getStringWidth(tmp) / 2.;
+      winr[0] -= hr * drawContext::global()->getStringWidth(tmp) / 2.;
     else if(winr[0] < winp[0]) // right align
-      winr[0] -= drawContext::global()->getStringWidth(tmp);
+      winr[0] -= hr * drawContext::global()->getStringWidth(tmp);
     if(fabs(winr[1] - winp[1]) < 2.) // center align
-      winr[1] -= drawContext::global()->getStringHeight() / 3.;
+      winr[1] -= hr * drawContext::global()->getStringHeight() / 3.;
     else if(winr[1] < winp[1]) // top align
-      winr[1] -= drawContext::global()->getStringHeight();
+      winr[1] -= hr * drawContext::global()->getStringHeight();
     ctx->viewport2World(winr, r);
     ctx->drawString(tmp, r[0], r[1], r[2]);
   }
@@ -120,26 +123,25 @@ static void drawGridStipple(int n1, int n2, double p1[3], double p2[3],
   double l1 = norme(t1);
   double l2 = norme(t2);
 
-  glEnable(GL_LINE_STIPPLE);
-  glLineStipple(1, 0x1111);
+  gmshLineStipple(1, 0x1111);
   gl2psEnable(GL2PS_LINE_STIPPLE);
-  glBegin(GL_LINES);
+  gmshBegin(GL_LINES);
 
   for(int i = 1; i < n1 - 1; i++) {
     double d = (double)i / (double)(n1 - 1) * l1;
-    glVertex3d(p1[0] + t1[0] * d, p1[1] + t1[1] * d, p1[2] + t1[2] * d);
-    glVertex3d(p1[0] + t1[0] * d + t2[0] * l2, p1[1] + t1[1] * d + t2[1] * l2,
+    gmshVertex3d(p1[0] + t1[0] * d, p1[1] + t1[1] * d, p1[2] + t1[2] * d);
+    gmshVertex3d(p1[0] + t1[0] * d + t2[0] * l2, p1[1] + t1[1] * d + t2[1] * l2,
                p1[2] + t1[2] * d + t2[2] * l2);
   }
   for(int i = 1; i < n2 - 1; i++) {
     double d = (double)i / (double)(n2 - 1) * l2;
-    glVertex3d(p1[0] + t2[0] * d, p1[1] + t2[1] * d, p1[2] + t2[2] * d);
-    glVertex3d(p1[0] + t2[0] * d + t1[0] * l1, p1[1] + t2[1] * d + t1[1] * l1,
+    gmshVertex3d(p1[0] + t2[0] * d, p1[1] + t2[1] * d, p1[2] + t2[2] * d);
+    gmshVertex3d(p1[0] + t2[0] * d + t1[0] * l1, p1[1] + t2[1] * d + t1[1] * l1,
                p1[2] + t2[2] * d + t1[2] * l1);
   }
 
-  glEnd();
-  glDisable(GL_LINE_STIPPLE);
+  gmshEnd();
+  gmshLineStippleOff();
   gl2psDisable(GL2PS_LINE_STIPPLE);
 }
 
@@ -151,29 +153,31 @@ void drawContext::drawAxis(double xmin, double ymin, double zmin, double xmax,
     if(ntics < 1) ntics = 1;
     double dd[3] = {(xmax - xmin) / ntics, (ymax - ymin) / ntics,
                     (zmax - zmin) / ntics};
-    double axe_color[4];
-    glGetDoublev(GL_CURRENT_COLOR, axe_color);
+    // the axis colour, which the ticks alternate with white (a core profile
+    // has no current colour to query)
+    unsigned int axeColor = glyphCurrentColor();
+    const unsigned int white = 0xffffffffu;
+    glyphList g;
+    g.reserve(GLYPH_CYLINDER, ntics);
+    double radius = 3.5 * pixel_equiv_x / s[0];
     for(int i = 1; i <= ntics; i++) {
-      if(i % 2)
-        glColor4dv(axe_color);
-      else
-        glColor3f(1, 1, 1);
       double cx[2] = {xmin + (i - 1) * dd[0], xmin + i * dd[0]};
       double cy[2] = {ymin + (i - 1) * dd[1], ymin + i * dd[1]};
       double cz[2] = {zmin + (i - 1) * dd[2], zmin + i * dd[2]};
-      drawCylinder(3.5, cx, cy, cz, 1);
+      g.addCylinder(cx, cy, cz, radius, radius, (i % 2) ? axeColor : white);
     }
-    glColor4dv(axe_color);
+    g.draw(this, 1);
+    gmshColor4ubv((const void *)&axeColor);
   }
   else {
-    glBegin(GL_LINES);
-    glVertex3d(xmin, ymin, zmin);
-    glVertex3d(xmax, ymax, zmax);
-    glEnd();
+    gmshBegin(GL_LINES);
+    gmshVertex3d(xmin, ymin, zmin);
+    gmshVertex3d(xmax, ymax, zmax);
+    gmshEnd();
   }
 }
 
-void drawContext::drawAxes(int mode, double tics[3], std::string format[3],
+void drawContext::drawAxes(int mode, double ticks[3], std::string format[3],
                            std::string label[3], double bb[6], int mikado,
                            double value_bb[6])
 {
@@ -214,9 +218,9 @@ void drawContext::drawAxes(int mode, double tics[3], std::string format[3],
       perp[2] = -dir[1];
     }
     double value_end[3] = {value_xmax, value_ymax, value_zmax};
-    drawTics(this, -1, tics[0], format[0], label[0], orig, end, perp, mikado,
-             pixelfact, value_orig, value_end);
-    drawAxis(xmin, ymin, zmin, xmax, ymax, zmax, tics[0], mikado);
+    drawTicks(this, -1, ticks[0], format[0], label[0], orig, end, perp, pixelfact,
+             value_orig, value_end);
+    drawAxis(xmin, ymin, zmin, xmax, ymax, zmax, ticks[0], mikado);
     return;
   }
   double xx[3] = {xmax, ymin, zmin};
@@ -230,16 +234,16 @@ void drawContext::drawAxes(int mode, double tics[3], std::string format[3],
   double dzm[3] = {(xmin != xmax) ? -1. : 0., (ymin != ymax) ? -1. : 0., 0.};
 
   int nx = (xmin != xmax) ?
-             drawTics(this, 0, tics[0], format[0], label[0], orig, xx, dxm,
-                      mikado, pixelfact, value_orig, value_xx) :
+             drawTicks(this, 0, ticks[0], format[0], label[0], orig, xx, dxm,
+                      pixelfact, value_orig, value_xx) :
              0;
   int ny = (ymin != ymax) ?
-             drawTics(this, 1, tics[1], format[1], label[1], orig, yy, dym,
-                      mikado, pixelfact, value_orig, value_yy) :
+             drawTicks(this, 1, ticks[1], format[1], label[1], orig, yy, dym,
+                      pixelfact, value_orig, value_yy) :
              0;
   int nz = (zmin != zmax) ?
-             drawTics(this, 2, tics[2], format[2], label[2], orig, zz, dzm,
-                      mikado, pixelfact, value_orig, value_zz) :
+             drawTicks(this, 2, ticks[2], format[2], label[2], orig, zz, dzm,
+                      pixelfact, value_orig, value_zz) :
              0;
 
   drawAxis(xmin, ymin, zmin, xmax, ymin, zmin, nx, mikado);
@@ -280,7 +284,7 @@ void drawContext::drawAxes(int mode, double tics[3], std::string format[3],
   }
 }
 
-void drawContext::drawAxes(int mode, double tics[3], std::string format[3],
+void drawContext::drawAxes(int mode, double ticks[3], std::string format[3],
                            std::string label[3], SBoundingBox3d &bb, int mikado,
                            SBoundingBox3d &value_bb)
 {
@@ -289,7 +293,7 @@ void drawContext::drawAxes(int mode, double tics[3], std::string format[3],
   double value_bbox[6] = {value_bb.min().x(), value_bb.max().x(),
                           value_bb.min().y(), value_bb.max().y(),
                           value_bb.min().z(), value_bb.max().z()};
-  drawAxes(mode, tics, format, label, bbox, mikado, value_bbox);
+  drawAxes(mode, ticks, format, label, bbox, mikado, value_bbox);
 }
 
 void drawContext::drawAxes()
@@ -304,14 +308,14 @@ void drawContext::drawAxes()
 
   if(geometryExists &&
      (CTX::instance()->drawBBox || !CTX::instance()->mesh.draw)) {
-    glColor4ubv((GLubyte *)&CTX::instance()->color.fg);
-    glLineWidth((float)CTX::instance()->lineWidth);
+    gmshColor4ubv((GLubyte *)&CTX::instance()->color.fg);
+    gmshLineWidth((float)CTX::instance()->lineWidth);
     gl2psLineWidth((float)(CTX::instance()->lineWidth *
                            CTX::instance()->print.epsLineWidthFactor));
     drawBox(CTX::instance()->min[0], CTX::instance()->min[1],
             CTX::instance()->min[2], CTX::instance()->max[0],
             CTX::instance()->max[1], CTX::instance()->max[2]);
-    glColor3d(1., 0., 0.);
+    gmshColor3d(1., 0., 0.);
     for(int j = 0; j < 6; j++)
       if(CTX::instance()->geom.clip & (1 << j) ||
          CTX::instance()->mesh.clip & (1 << j))
@@ -324,12 +328,12 @@ void drawContext::drawAxes()
   }
 
   if(CTX::instance()->axes) {
-    glColor4ubv((GLubyte *)&CTX::instance()->color.axes);
-    glLineWidth((float)CTX::instance()->lineWidth);
+    gmshColor4ubv((GLubyte *)&CTX::instance()->color.axes);
+    gmshLineWidth((float)CTX::instance()->lineWidth);
     gl2psLineWidth((float)(CTX::instance()->lineWidth *
                            CTX::instance()->print.epsLineWidthFactor));
     if(!CTX::instance()->axesAutoPosition) {
-      drawAxes(CTX::instance()->axes, CTX::instance()->axesTics,
+      drawAxes(CTX::instance()->axes, CTX::instance()->axesTicks,
                CTX::instance()->axesFormat, CTX::instance()->axesLabel,
                CTX::instance()->axesPosition, CTX::instance()->axesMikado,
                CTX::instance()->axesForceValue ? CTX::instance()->axesValue :
@@ -339,7 +343,7 @@ void drawContext::drawAxes()
       double bb[6] = {CTX::instance()->min[0], CTX::instance()->max[0],
                       CTX::instance()->min[1], CTX::instance()->max[1],
                       CTX::instance()->min[2], CTX::instance()->max[2]};
-      drawAxes(CTX::instance()->axes, CTX::instance()->axesTics,
+      drawAxes(CTX::instance()->axes, CTX::instance()->axesTicks,
                CTX::instance()->axesFormat, CTX::instance()->axesLabel, bb,
                CTX::instance()->axesMikado,
                CTX::instance()->axesForceValue ? CTX::instance()->axesValue :
@@ -348,7 +352,7 @@ void drawContext::drawAxes()
   }
 
   if(CTX::instance()->drawRotationCenter) {
-    glColor4ubv((GLubyte *)&CTX::instance()->color.fg);
+    gmshColor4ubv((GLubyte *)&CTX::instance()->color.fg);
     if(CTX::instance()->rotationCenterCg)
       drawSphere(CTX::instance()->pointSize, CTX::instance()->cg[0],
                  CTX::instance()->cg[1], CTX::instance()->cg[2],
@@ -373,16 +377,13 @@ void drawContext::drawSmallAxes()
   double xx, xy, yx, yy, zx, zy;
 
   if(CTX::instance()->camera) {
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    gluLookAt(camera.position.x, camera.position.y, camera.position.z,
-              camera.target.x, camera.target.y, camera.target.z, camera.up.x,
-              camera.up.y, camera.up.z);
-    glPushMatrix();
-    glPopMatrix();
-    float fvViewMatrix[16];
-    glGetFloatv(GL_MODELVIEW_MATRIX, fvViewMatrix);
-    glLoadIdentity();
+    gmshMatrixMode(GMSH_MODELVIEW);
+    gmshLoadIdentity();
+    double eye[3] = {camera.position.x, camera.position.y, camera.position.z};
+    double target[3] = {camera.target.x, camera.target.y, camera.target.z};
+    double up[3] = {camera.up.x, camera.up.y, camera.up.z};
+    double fvViewMatrix[16];
+    glMatrix::lookAt(eye, target, up, fvViewMatrix);
     xx = l * fvViewMatrix[0];
     xy = l * fvViewMatrix[1];
     yx = l * fvViewMatrix[4];
@@ -401,19 +402,19 @@ void drawContext::drawSmallAxes()
     zx = l * rot[8];
     zy = l * rot[9];
   }
-  glLineWidth((float)CTX::instance()->lineWidth);
+  gmshLineWidth((float)CTX::instance()->lineWidth);
   gl2psLineWidth((float)(CTX::instance()->lineWidth *
                          CTX::instance()->print.epsLineWidthFactor));
-  glColor4ubv((GLubyte *)&CTX::instance()->color.smallAxes);
+  gmshColor4ubv((GLubyte *)&CTX::instance()->color.smallAxes);
 
-  glBegin(GL_LINES);
-  glVertex2d(cx, cy);
-  glVertex2d(cx + xx, cy + xy);
-  glVertex2d(cx, cy);
-  glVertex2d(cx + yx, cy + yy);
-  glVertex2d(cx, cy);
-  glVertex2d(cx + zx, cy + zy);
-  glEnd();
+  gmshBegin(GL_LINES);
+  gmshVertex2d(cx, cy);
+  gmshVertex2d(cx + xx, cy + xy);
+  gmshVertex2d(cx, cy);
+  gmshVertex2d(cx + yx, cy + yy);
+  gmshVertex2d(cx, cy);
+  gmshVertex2d(cx + zx, cy + zy);
+  gmshEnd();
   drawString("X", cx + xx + o, cy + xy + o, 0.);
   drawString("Y", cx + yx + o, cy + yy + o, 0.);
   drawString("Z", cx + zx + o, cy + zy + o, 0.);

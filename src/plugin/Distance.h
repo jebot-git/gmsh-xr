@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -9,10 +9,6 @@
 #include <string>
 #include "Plugin.h"
 #include "MVertex.h"
-
-extern "C" {
-GMSH_Plugin *GMSH_RegisterDistancePlugin();
-}
 
 class GMSH_DistancePlugin : public GMSH_PostPlugin {
 private:
@@ -25,8 +21,6 @@ public:
   std::string getShortHelp() const { return "Compute distance to boundaries"; }
   std::string getHelp() const;
   std::string getAuthor() const { return "E. Marchandise"; }
-  int getNbOptions() const;
-  StringXNumber *getOption(int iopt);
   PView *execute(PView *);
   void printView(std::vector<GEntity *> &entities,
                  std::map<MVertex *, double> &distance_map);

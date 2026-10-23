@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -681,7 +681,7 @@ void GModel::createTopologyFromMesh()
 
   pruneMeshVertexAssociations();
 
-  CTX::instance()->mesh.changed = ENT_ALL;
+  CTX::instance()->meshChanged();
 
   double t2 = Cpu(), w2 = TimeOfDay();
   Msg::Info("Done creating topology from mesh (Wall %gs, CPU %gs)", w2 - w1,

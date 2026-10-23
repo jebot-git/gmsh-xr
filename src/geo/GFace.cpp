@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -11,7 +11,7 @@
 #include "GEdge.h"
 #include "MTriangle.h"
 #include "MQuadrangle.h"
-#include "MElementCut.h"
+#include "MPolygon.h"
 #include "VertexArray.h"
 #include "fullMatrix.h"
 #include "Numeric.h"
@@ -21,6 +21,7 @@
 #include "discreteEdge.h"
 #include "discreteFace.h"
 #include "ExtrudeParams.h"
+#include "LBFGS.h"
 
 #if defined(HAVE_MESH)
 #include "meshGFace.h"
@@ -28,11 +29,6 @@
 #include "BackgroundMeshTools.h"
 #include "meshGFaceBipartiteLabelling.h"
 #include "Field.h"
-#endif
-
-#if defined(HAVE_ALGLIB)
-#include <stdafx.h>
-#include <optimization.h>
 #endif
 
 #if defined(HAVE_QUADMESHINGTOOLS)
@@ -47,6 +43,7 @@ GFace::GFace(GModel *model, int tag)
 {
   meshStatistics.status = GFace::PENDING;
   meshStatistics.refineAllEdges = false;
+  meshStatistics.nbRefineAllEdges = 0;
   GFace::resetMeshAttributes();
 }
 
@@ -142,6 +139,19 @@ void GFace::setBoundEdges(const std::vector<int> &tagEdges,
   }
 }
 
+void GFace::setBoundEdges(const std::vector<GEdge *> &edges,
+                          const std::vector<int> &signEdges)
+{
+  for(std::size_t i = 0; i < edges.size(); i++) {
+    GEdge *ge = edges[i];
+    if(std::find(l_edges.begin(), l_edges.end(), ge) != l_edges.end())
+      continue;
+    l_edges.push_back(ge);
+    l_dirs.push_back(i < signEdges.size() ? signEdges[i] : 1);
+    ge->addFace(this);
+  }
+}
+
 void GFace::deleteMesh()
 {
   if(getNumMeshVertices() || getNumMeshElements())
@@ -160,6 +170,8 @@ void GFace::deleteGeometryVertexArrays()
   if(!va_geom_triangles) return;
   delete va_geom_triangles;
   va_geom_triangles = nullptr;
+  // what the surfaces of the model are drawn from is merged from these
+  CTX::instance()->geomChanged(ENT_SURFACE);
 }
 
 std::size_t GFace::getNumMeshElements() const
@@ -177,14 +189,6 @@ std::size_t GFace::getNumMeshElementsByType(const int familyType) const
     return polygons.size();
 
   return 0;
-}
-
-std::size_t GFace::getNumMeshParentElements()
-{
-  std::size_t n = 0;
-  for(std::size_t i = 0; i < polygons.size(); i++)
-    if(polygons[i]->ownsParent()) n++;
-  return n;
 }
 
 void GFace::getNumMeshElements(unsigned *const c) const
@@ -1158,63 +1162,17 @@ SPoint2 GFace::parFromPoint(const SPoint3 &p, bool onSurface,
   return SPoint2(U, V);
 }
 
-#if defined(HAVE_ALGLIB)
-
-class data_wrapper {
-private:
-  const GFace *gf;
-  SPoint3 point;
-
-public:
-  data_wrapper()
-  {
-    gf = nullptr;
-    point = SPoint3();
-  }
-  ~data_wrapper() {}
-  const GFace *get_face() { return gf; }
-  void set_face(const GFace *face) { gf = face; }
-  SPoint3 get_point() { return point; }
-  void set_point(const SPoint3 &_point) { point = SPoint3(_point); }
-};
-
-// Callback function for ALGLIB
-void bfgs_callback(const alglib::real_1d_array &x, double &func,
-                   alglib::real_1d_array &grad, void *ptr)
-{
-  auto *w = static_cast<data_wrapper *>(ptr);
-  SPoint3 p = w->get_point();
-  const GFace *gf = w->get_face();
-
-  // Value of the objective
-  GPoint pnt = gf->point(x[0], x[1]);
-  func = 0.5 * (p.x() - pnt.x()) * (p.x() - pnt.x()) +
-         (p.y() - pnt.y()) * (p.y() - pnt.y()) +
-         (p.z() - pnt.z()) * (p.z() - pnt.z());
-  // printf("func : %f\n", func);
-
-  // Value of the gradient
-  std::pair<SVector3, SVector3> der = gf->firstDer(SPoint2(x[0], x[1]));
-  grad[0] = -(p.x() - pnt.x()) * der.first.x() -
-            (p.y() - pnt.y()) * der.first.y() -
-            (p.z() - pnt.z()) * der.first.z();
-  grad[1] = -(p.x() - pnt.x()) * der.second.x() -
-            (p.y() - pnt.y()) * der.second.y() -
-            (p.z() - pnt.z()) * der.second.z();
-  // printf("func %22.15E Gradients %22.15E %22.15E der %g %g %g\n", func,
-  //         grad[0], grad[1],der.first.x(),der.first.y(),der.first.z());
-}
-#endif
-
 GPoint GFace::closestPoint(const SPoint3 &queryPoint,
                            const double initialGuess[2]) const
 {
   if(geomType() == BoundaryLayerSurface) return GPoint();
 
-#if defined(HAVE_ALGLIB)
-  // Test initial guess
-  double min_u = initialGuess[0];
-  double min_v = initialGuess[1];
+  // Test initial guess (a null guess means the caller has none: start from the
+  // middle of the parameter range, the sampling below will do the rest)
+  double min_u = initialGuess ? initialGuess[0] :
+                                0.5 * (parBounds(0).low() + parBounds(0).high());
+  double min_v = initialGuess ? initialGuess[1] :
+                                0.5 * (parBounds(1).low() + parBounds(1).high());
   GPoint pnt = point(min_u, min_v);
   SPoint3 spnt(pnt.x(), pnt.y(), pnt.z());
   double min_dist = queryPoint.distance(spnt);
@@ -1240,31 +1198,29 @@ GPoint GFace::closestPoint(const SPoint3 &queryPoint,
   }
 
   try {
-    // Set up optimisation problem
-    alglib::ae_int_t dim = 2;
-    alglib::ae_int_t corr = 2; // Num of corrections in the scheme in [3,7]
-    alglib::minlbfgsstate state;
-    alglib::real_1d_array x;
-    const double initialCond[2] = {min_u, min_v};
-    x.setcontent(dim, initialCond);
-    minlbfgscreate(2, corr, x, state);
-
-    // Set stopping criteria
-    const double epsg = 1.e-12;
-    const double epsf = 0.;
-    const double epsx = 0.;
-    const alglib::ae_int_t maxits = 500;
-    minlbfgssetcond(state, epsg, epsf, epsx, maxits);
-
-    // Solve problem
-    data_wrapper w;
-    w.set_point(queryPoint);
-    w.set_face(this);
-    minlbfgsoptimize(state, bfgs_callback, nullptr, &w);
-
-    // Get results
-    alglib::minlbfgsreport rep;
-    minlbfgsresults(state, x, rep);
+    // Minimize half the squared distance to the query point
+    LBFGS::Options options;
+    options.memory = 2;
+    options.maxIterations = 500;
+    options.gradientTolerance = 1.e-12;
+    options.functionTolerance = 0.;
+    options.stepTolerance = 0.;
+    options.maxStepNorm = 0.;
+    std::vector<double> x = {min_u, min_v};
+    LBFGS::minimize(
+      x,
+      [&](const std::vector<double> &uv, std::vector<double> &grad) {
+        GPoint pnt = point(uv[0], uv[1]);
+        SVector3 d(queryPoint.x() - pnt.x(), queryPoint.y() - pnt.y(),
+                   queryPoint.z() - pnt.z());
+        std::pair<SVector3, SVector3> der = firstDer(SPoint2(uv[0], uv[1]));
+        grad[0] = -d.x() * der.first.x() - d.y() * der.first.y() -
+                  d.z() * der.first.z();
+        grad[1] = -d.x() * der.second.x() - d.y() * der.second.y() -
+                  d.z() * der.second.z();
+        return 0.5 * (d.x() * d.x() + d.y() * d.y() + d.z() * d.z());
+      },
+      options);
     GPoint pntF = point(x[0], x[1]);
     return pntF;
   } catch(...) {
@@ -1272,12 +1228,6 @@ GPoint GFace::closestPoint(const SPoint3 &queryPoint,
     SPoint2 p = parFromPoint(queryPoint, false);
     return point(p);
   }
-
-#else
-  Msg::Error("Closest point not implemented for this type of surface");
-  SPoint2 p = parFromPoint(queryPoint, false);
-  return point(p);
-#endif
 }
 
 bool GFace::containsParam(const SPoint2 &pt)
@@ -1616,7 +1566,7 @@ bool GFace::fillVertexArray(bool force)
 {
   if(va_geom_triangles) {
     if(force)
-      delete va_geom_triangles;
+      deleteGeometryVertexArrays();
     else
       return true;
   }
@@ -2013,7 +1963,7 @@ static void meshCompound(GFace *gf, bool verbose)
     }
     else {
       gf->mesh_vertices.push_back(df->mesh_vertices[i]);
-      gf->mesh_vertices[i]->setEntity(gf);
+      df->mesh_vertices[i]->setEntity(gf);
     }
   }
 
@@ -2062,8 +2012,8 @@ void GFace::mesh(bool verbose)
   }
 
 #if defined(HAVE_MESH)
-  if(compound.size())
-    meshAttributes.meshSizeFactor = CTX::instance()->mesh.compoundLcFactor;
+  //  if(compound.size())
+  //    meshAttributes.meshSizeFactor = CTX::instance()->mesh.compoundLcFactor;
 
   meshGFace mesher;
   mesher(this, verbose);
@@ -2104,12 +2054,29 @@ void GFace::moveToValidRange(SPoint2 &pt) const
   }
 }
 
-void GFace::relocateMeshVertices()
+void GFace::relocateMeshVertices(const std::vector<double> &pmin,
+                                 const std::vector<double> &pmax)
 {
+  bool rescale = (pmin.size() == 2 && pmax.size() == 2);
+  double u0min = 0, u0max = 0, u1min = 0, u1max = 0;
+  if(rescale) {
+    printf("rescaling parameter bounds in surface %d\n", tag());
+    Range<double> u0r = parBounds(0);
+    Range<double> u1r = parBounds(1);
+    u0min = u0r.low();
+    u0max = u0r.high();
+    u1min = u1r.low();
+    u1max = u1r.high();
+  }
+
   for(std::size_t i = 0; i < mesh_vertices.size(); i++) {
     MVertex *v = mesh_vertices[i];
     double u0 = 0., u1 = 0.;
     if(v->getParameter(0, u0) && v->getParameter(1, u1)) {
+      if(rescale) {
+        u0 = u0min + (u0max - u0min) * (u0 - pmin[0]) / (pmax[0] - pmin[0]);
+        u1 = u1min + (u1max - u1min) * (u1 - pmin[1]) / (pmax[1] - pmin[1]);
+      }
       GPoint p = point(u0, u1);
       v->x() = p.x();
       v->y() = p.y();

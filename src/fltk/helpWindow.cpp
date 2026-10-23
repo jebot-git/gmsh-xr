@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -261,12 +261,23 @@ void help_options_cb(Fl_Widget *w, void *data)
   int diff = FlGui::instance()->help->modified->value();
   int help = FlGui::instance()->help->showhelp->value();
   std::string search = FlGui::instance()->help->search->value();
-  std::transform(search.begin(), search.end(), search.begin(), ::tolower);
 
   PrintOptions(0, GMSH_FULLRC, diff, help, nullptr, &s0);
 #if defined(HAVE_PARSER)
   PrintParserSymbols(help, s0);
 #endif
+
+  // the search, compiled once for all the lines (case-insensitive); a pattern
+  // that is not a valid regular expression matches nothing
+  std::regex pattern;
+  bool valid = true;
+  if(!search.empty()) {
+    try {
+      pattern = std::regex(search, std::regex_constants::icase);
+    } catch(...) {
+      valid = false;
+    }
+  }
 
   int top = FlGui::instance()->help->browser->topline();
   FlGui::instance()->help->browser->clear();
@@ -285,18 +296,8 @@ void help_options_cb(Fl_Widget *w, void *data)
     if(s0[i].size() > 256)
       s0[i].resize(256);
 
-    if(search.empty()) {
+    if(search.empty() || (valid && std::regex_search(s0[i], pattern)))
       FlGui::instance()->help->browser->add(s0[i].c_str(), d);
-    }
-    else {
-      try {
-        // icase for case-insensitive search
-        if(std::regex_search(s0[i],
-                             std::regex(search, std::regex_constants::icase)))
-          FlGui::instance()->help->browser->add(s0[i].c_str(), d);
-      } catch(...) {
-      }
-    }
   }
   FlGui::instance()->help->browser->topline(top);
 }
@@ -319,7 +320,7 @@ helpWindow::helpWindow()
     std::ostringstream sstream;
     sstream
       << "<center><h3>Gmsh</h3><br>version " << GetGmshVersion()
-      << "<p>Copyright (C) 1997-2025"
+      << "<p>Copyright (C) 1997-2026"
       << "<br>Christophe Geuzaine and Jean-Francois Remacle"
       << "<p><a href=\"https://gmsh.info/CREDITS.txt\">Credits</a> "
       << "and <a href=\"https://gmsh.info/LICENSE.txt\">licensing "
@@ -356,8 +357,6 @@ helpWindow::helpWindow()
       << "for more information</center>";
     o->value(sstream.str().c_str());
     o->link(help_link);
-    about->position(Fl::x() + Fl::w() / 2 - width / 2,
-                    Fl::y() + Fl::h() / 2 - height / 2);
     about->end();
   }
 
@@ -416,8 +415,6 @@ helpWindow::helpWindow()
     o->value(s.c_str());
 
     basic->resizable(o);
-    basic->position(Fl::x() + Fl::w() / 2 - width / 2,
-                    Fl::y() + Fl::h() / 2 - height / 2);
     basic->end();
   }
 
@@ -481,8 +478,6 @@ helpWindow::helpWindow()
     }
 
     options->resizable(browser);
-    options->position(Fl::x() + Fl::w() / 2 - width / 2,
-                      Fl::y() + Fl::h() / 2 - height / 2);
     options->size_range(width, height);
     options->end();
   }

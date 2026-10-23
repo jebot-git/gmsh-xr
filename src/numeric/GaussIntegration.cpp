@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -10,6 +10,7 @@
 static void pts2fullMatrix(int npts, IntPt *pts, fullMatrix<double> &pMatrix,
                            fullVector<double> &wMatrix)
 {
+  if(!pts) npts = 0; // rule not available
   pMatrix.resize(npts, 3);
   wMatrix.resize(npts, 1);
   for(int i = 0; i < npts; i++) {

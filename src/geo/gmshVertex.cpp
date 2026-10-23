@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -11,6 +11,8 @@
 #include "GmshMessage.h"
 #include "MVertex.h"
 #include "MPoint.h"
+#include "GmshDefines.h"
+#include "Context.h"
 
 gmshVertex::gmshVertex(GModel *m, Vertex *v) : GVertex(m, v->Num, v->lc), _v(v)
 {
@@ -34,6 +36,7 @@ double gmshVertex::z() const { return _v->Pos.Z; }
 
 void gmshVertex::setPosition(GPoint &p)
 {
+  CTX::instance()->geomChanged();
   _v->Pos.X = p.x();
   _v->Pos.Y = p.y();
   _v->Pos.Z = p.z();

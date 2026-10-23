@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -7,12 +7,34 @@
 #define PVIEW_OPTIONS_H
 
 #include <string>
+#include <vector>
 #include "ColorTable.h"
 #include "SBoundingBox3d.h"
 
 class mathEvaluator;
+class PViewData;
 
 // The display options of a post-processing view.
+// The evaluator of the general raise, built from its expressions when the view
+// is drawn: owned by the options, and not copied with them
+class raiseEvaluator {
+private:
+  mathEvaluator *_e = nullptr;
+
+public:
+  raiseEvaluator() = default;
+  raiseEvaluator(const raiseEvaluator &) {}
+  raiseEvaluator &operator=(const raiseEvaluator &)
+  {
+    reset();
+    return *this;
+  }
+  ~raiseEvaluator() { reset(); }
+  void reset(mathEvaluator *e = nullptr);
+  mathEvaluator *operator->() const { return _e; }
+  explicit operator bool() const { return _e != nullptr; }
+};
+
 class PViewOptions {
 public:
   enum PlotType { Plot3D = 1, Plot2DSpace = 2, Plot2DTime = 3, Plot2D = 4 };
@@ -36,16 +58,37 @@ public:
   };
   enum GlyphLocation { COG = 1, Vertex = 2 };
   enum RangeType { Default = 1, Custom = 2, PerTimeStep = 3 };
-  enum ScaleType { Linear = 1, Logarithmic = 2, DoubleLogarithmic = 3 };
+  enum ScaleType { Linear = 1, Logarithmic = 2, SymmetricLogarithmic = 3 };
 
   int type, autoPosition;
   double position[2], size[2];
   std::string format;
+  // How a value is printed: what the user asked for, or, when they asked for
+  // nothing, the automatic format. The scale adapts its labels to the range
+  // it spans; a single value out in the scene has no range to adapt to.
+  std::string getFormat() const { return format.empty() ? "%.3g" : format; }
+  // The scale the values of a range are laid out on: the one that is asked
+  // for, or the linear one when that cannot be done - a logarithmic scale of
+  // a range that reaches zero, whose values have no logarithm. The symmetric
+  // one always can: it is logarithmic on both sides of a threshold around
+  // zero, and linear inside it.
+  int getScaleType(double min, double max) const
+  {
+    if(scaleType == Logarithmic && (min <= 0. || max <= 0.)) return Linear;
+    return scaleType;
+  }
+  // the threshold a symmetric logarithmic scale uses over that range: the
+  // one that is asked for, or four decades below the largest value
+  double getScaleThreshold(double min, double max) const;
+  // where a value falls on that scale, and what falls there
+  double scaleForward(double v, double min, double max) const;
+  double scaleInverse(double u, double min, double max) const;
   int axes, axesAutoPosition, axesMikado;
-  double axesTics[3];
+  double axesTicks[3];
   std::string axesFormat[3], axesLabel[3];
   double axesPosition[6];
   double customMin, customMax, tmpMin, tmpMax, externalMin, externalMax;
+  double scaleThreshold;
   double customAbscissaMin, customAbscissaMax;
   SBoundingBox3d tmpBBox;
   double offset[3], raise[3], transform[3][3], displacementFactor, normalRaise;
@@ -55,7 +98,7 @@ public:
   int visible, intervalsType, nbIso;
   int light, lightTwoSide, lightLines, smoothNormals;
   double angleSmoothNormals;
-  int saturateValues, fakeTransparency;
+  int saturateValues;
   int showElement, showTime, showScale;
   int scaleType, rangeType, abscissaRangeType;
   int vectorType, tensorType, glyphLocation, centerGlyphs;
@@ -66,17 +109,19 @@ public:
   int drawTetrahedra, drawHexahedra, drawPrisms, drawPyramids, drawTrihedra,
     drawPolyhedra;
   int drawScalars, drawVectors, drawTensors;
-  int boundary, pointType, lineType, drawSkinOnly;
+  int boundary, pointType, lineType, drawSkinOnly, drawSkinEdgesOnly;
   double pointSize, lineWidth;
   GmshColorTable colorTable;
+  // multiplies the alpha of the colormap (applied by the shader)
+  double transparency;
   int useStipple, stipple[10][2];
   std::string stippleString[10];
   int externalViewIndex, viewIndexForGenRaise;
   int useGenRaise;
   double genRaiseFactor;
   std::string genRaiseX, genRaiseY, genRaiseZ;
-  mathEvaluator *genRaiseEvaluator;
-  int adaptVisualizationGrid, maxRecursionLevel;
+  raiseEvaluator genRaiseEvaluator;
+  int adaptVisualizationGrid, maxRecursionLevel, adaptSkinOnly;
   double targetError;
   int clip; // status of clip planes (bit array)
   int forceNumComponents, componentMap[9];
@@ -86,6 +131,7 @@ public:
   struct {
     unsigned int point, line, triangle, quadrangle;
     unsigned int tetrahedron, hexahedron, prism, pyramid, trihedron;
+    unsigned int polygon, polyhedron;
     unsigned int tangents, normals;
     unsigned int text2d, text3d, axes, background2d;
   } color;
@@ -93,10 +139,13 @@ public:
 private:
   // static reference that contains default values
   static PViewOptions *_reference;
+  // the range of the forced components, computed by looping over all the
+  // values, and what it was computed for
+  std::vector<double> _forcedRangeKey;
+  double _forcedMin, _forcedMax;
 
 public:
   PViewOptions();
-  ~PViewOptions();
   static PViewOptions *reference();
   // return a floating point value in [min, max] corresponding to the
   // integer iso in [0, numIso - 1]
@@ -111,6 +160,33 @@ public:
                         bool forceLinear = false, int numColors = -1);
   // get i-th color amongst nb (i in [0, nb - 1])
   unsigned int getColor(int i, int nb);
+  // the range of the values of data the options ask for: the custom one, that
+  // of the current time step, or that of all the steps; of the forced
+  // components if the number of components is forced
+  void getRange(PViewData *data, double &min, double &max);
+  // are the faces drawn only those on the skin (DrawSkinOnly, with the values
+  // drawn on them)? and is nothing else drawn of the volumes, so that they can
+  // be refined only there (AdaptSkinOnly)?
+  bool skinOnly() const
+  {
+    return drawSkinOnly && boundary <= 0 &&
+           (intervalsType == Continuous || intervalsType == Discrete);
+  }
+  bool adaptsSkinOnly() const
+  {
+    return adaptSkinOnly && skinOnly() && (!showElement || drawSkinEdgesOnly);
+  }
+  // do the options move the nodes drawn from where the data puts them?
+  bool movesNodes() const
+  {
+    for(int i = 0; i < 3; i++) {
+      if(offset[i] || raise[i]) return true;
+      for(int j = 0; j < 3; j++)
+        if(transform[i][j] != (i == j ? 1. : 0.)) return true;
+    }
+    return explode != 1. || normalRaise || useGenRaise ||
+           vectorType == Displacement;
+  }
   // create math evaluator for general raise option
   void createGeneralRaise();
   // return true if one should not draw elements with type type

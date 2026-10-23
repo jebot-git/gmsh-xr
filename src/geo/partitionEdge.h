@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -17,12 +17,13 @@ private:
 public:
   partitionEdge(GModel *model, int num, GVertex *_v0, GVertex *_v1,
                 const std::vector<int> &partitions)
-    : discreteEdge(model, num, _v0, _v1), _partitions(partitions),
+    : discreteEdge(model, num, _v0, _v1, false), _partitions(partitions),
       _parentEntity(nullptr)
   {
   }
   partitionEdge(GModel *model, int num, const std::vector<int> &partitions)
-    : discreteEdge(model, num), _partitions(partitions), _parentEntity(nullptr)
+    : discreteEdge(model, num, false), _partitions(partitions),
+      _parentEntity(nullptr)
   {
   }
   partitionEdge(GModel *model, const std::vector<int> &partitions)
@@ -34,7 +35,7 @@ public:
   virtual bool haveParametrization() { return false; }
   virtual void setParentEntity(GEntity *e) { _parentEntity = e; }
   virtual GEntity *getParentEntity() { return _parentEntity; }
-  virtual void setPartitions(std::vector<int> &partitions)
+  virtual void setPartitions(const std::vector<int> &partitions)
   {
     _partitions = partitions;
   }

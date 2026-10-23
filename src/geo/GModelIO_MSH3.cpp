@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -545,7 +545,7 @@ int GModel::_readMSH3(const std::string &name)
         _storeElementsInEntities(elements[i]);
         elements[i].clear();
       }
-      if(!PView::readMSHViewData(name, fp, binary, swap, &str[1])) {
+      if(!PView::readMSHViewData(name, fp, binary, swap, &str[1], version)) {
         fclose(fp);
         return 0;
       }
@@ -557,7 +557,8 @@ int GModel::_readMSH3(const std::string &name)
     } while(str[0] != '$');
   }
 
-  std::map<std::size_t, MVertex *> vertexMap(_vertexMapCache);
+  std::map<std::size_t, MVertex *> vertexMap(_vertexMapCache.begin(),
+                                             _vertexMapCache.end());
   std::vector<MVertex *> vertexVector(_vertexVectorCache);
 
   // store the elements in their associated elementary entity. If the

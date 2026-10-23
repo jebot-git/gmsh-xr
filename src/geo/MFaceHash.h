@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -12,11 +12,10 @@
 struct MFaceHash {
   size_t operator()(const MFace &f) const
   {
-    size_t v[4] = {0, 0, 0, 0};
-    for(size_t i = 0; i < f.getNumVertices(); i++) {
-      v[i] = f.getSortedVertex(i)->getNum();
-    }
-    return HashFNV1a<sizeof(size_t[4])>::eval(v);
+    std::size_t h = f.getNumVertices();
+    for(std::size_t i = 0; i < f.getNumVertices(); i++)
+      h = HashCombine(h, f.getSortedVertex(i)->getNum());
+    return HashMix(h);
   }
 };
 

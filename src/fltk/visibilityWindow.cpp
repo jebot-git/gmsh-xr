@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -42,6 +42,7 @@ typedef unsigned long intptr_t;
 #include "partitionEdge.h"
 #include "partitionFace.h"
 #include "partitionRegion.h"
+#include "OverlapEntities.h"
 
 #if defined(HAVE_PARSER)
 #include "Parser.h"
@@ -189,6 +190,51 @@ public:
   }
 };
 
+// the partitions of an entity without copying the vector (an overlap entity
+// stores a single partition, hence the scratch argument)
+static const std::vector<int> *partitionsOf(GEntity *ge, std::vector<int> &tmp)
+{
+  switch(ge->geomType()) {
+  case GEntity::PartitionPoint:
+    return &static_cast<partitionVertex *>(ge)->getPartitions();
+  case GEntity::PartitionCurve:
+    return &static_cast<partitionEdge *>(ge)->getPartitions();
+  case GEntity::PartitionSurface:
+    return &static_cast<partitionFace *>(ge)->getPartitions();
+  case GEntity::PartitionVolume:
+    return &static_cast<partitionRegion *>(ge)->getPartitions();
+  // overlap entities are not partition entities: they store the partition
+  // they belong to as a single tag
+  case GEntity::OverlapSurface:
+    tmp.assign(1, static_cast<overlapFace *>(ge)->owningPartition());
+    return &tmp;
+  case GEntity::OverlapVolume:
+    tmp.assign(1, static_cast<overlapRegion *>(ge)->owningPartition());
+    return &tmp;
+  default: return nullptr;
+  }
+}
+
+// which entities belong to which partition, built once when the browser is
+// filled: without it applying a selection walks the model once per partition
+static std::map<int, std::vector<GEntity *> > _partitionIndex;
+static GModel *_partitionIndexModel = nullptr;
+
+static void buildPartitionIndex(GModel *m)
+{
+  _partitionIndex.clear();
+  _partitionIndexModel = m;
+  std::vector<GEntity *> entities;
+  m->getEntities(entities);
+  std::vector<int> tmp;
+  for(std::size_t i = 0; i < entities.size(); i++) {
+    const std::vector<int> *ps = partitionsOf(entities[i], tmp);
+    if(!ps) continue;
+    for(std::size_t j = 0; j < ps->size(); j++)
+      _partitionIndex[(*ps)[j]].push_back(entities[i]);
+  }
+}
+
 class VisPartition : public Vis {
 private:
   int _tag;
@@ -200,28 +246,29 @@ public:
   int getTag() const { return _tag; }
   std::string getType() const { return "Partition"; }
   char getVisibility() const { return _visible; }
+  // only mark the partition in the browser, without touching the entities
+  void setListVisibility(char val) { _visible = val; }
   void setVisibility(char val, bool recursive = false, bool allmodels = false)
   {
     _visible = val;
     for(std::size_t i = 0; i < GModel::list.size(); i++) {
       GModel *m = GModel::list[i];
-      if(allmodels || m == GModel::current()) {
-        std::vector<GEntity *> entities;
-        m->getEntities(entities);
-        for(std::size_t j = 0; j < entities.size(); j++) {
-          std::vector<int> ps;
-          if(entities[j]->geomType() == GEntity::PartitionPoint)
-            ps = static_cast<partitionVertex *>(entities[j])->getPartitions();
-          else if(entities[j]->geomType() == GEntity::PartitionCurve)
-            ps = static_cast<partitionEdge *>(entities[j])->getPartitions();
-          else if(entities[j]->geomType() == GEntity::PartitionSurface)
-            ps = static_cast<partitionFace *>(entities[j])->getPartitions();
-          else if(entities[j]->geomType() == GEntity::PartitionVolume)
-            ps = static_cast<partitionRegion *>(entities[j])->getPartitions();
-          for(auto p : ps) {
-            if(p == _tag) entities[j]->setVisibility(val, recursive);
-          }
-        }
+      if(!allmodels && m != GModel::current()) continue;
+      if(m == _partitionIndexModel) { // the entities are already known
+        auto it = _partitionIndex.find(_tag);
+        if(it != _partitionIndex.end())
+          for(std::size_t j = 0; j < it->second.size(); j++)
+            it->second[j]->setVisibility(val, recursive);
+        continue;
+      }
+      std::vector<GEntity *> entities;
+      m->getEntities(entities);
+      std::vector<int> tmp;
+      for(std::size_t j = 0; j < entities.size(); j++) {
+        const std::vector<int> *ps = partitionsOf(entities[j], tmp);
+        if(!ps) continue;
+        for(std::size_t k = 0; k < ps->size(); k++)
+          if((*ps)[k] == _tag) entities[j]->setVisibility(val, recursive);
       }
     }
   }
@@ -332,6 +379,7 @@ public:
       }
     }
     else if(type == MeshPartitions) {
+      buildPartitionIndex(m);
       for(std::size_t part = 0; part < m->getNumPartitions(); part++) {
         Vis *v = new VisPartition(part + 1);
         if(v->match(search))
@@ -373,8 +421,32 @@ public:
         }
       }
     }
-    // this is superfluous in elementary mode, but we don't care
-    for(int i = 0; i < getNumEntities(); i++) setVisibility(i, 0);
+    if(type == MeshPartitions) {
+      // hide everything belonging to a partition in one pass, rather than
+      // once per partition; entities in no partition are left alone
+      for(std::size_t i = 0; i < GModel::list.size(); i++) {
+        GModel *m = GModel::list[i];
+        if(!allmodels && m != GModel::current()) continue;
+        if(m == _partitionIndexModel) {
+          for(auto &p : _partitionIndex)
+            for(std::size_t j = 0; j < p.second.size(); j++)
+              p.second[j]->setVisibility(0);
+        }
+        else {
+          std::vector<GEntity *> entities;
+          m->getEntities(entities);
+          std::vector<int> tmp;
+          for(std::size_t j = 0; j < entities.size(); j++)
+            if(partitionsOf(entities[j], tmp)) entities[j]->setVisibility(0);
+        }
+      }
+      for(int i = 0; i < getNumEntities(); i++)
+        static_cast<VisPartition *>(_entities[i])->setListVisibility(0);
+    }
+    else {
+      // this is superfluous in elementary mode, but we don't care
+      for(int i = 0; i < getNumEntities(); i++) setVisibility(i, 0);
+    }
   }
   // get the dim of the nth entity in the list
   int getDim(int n) { return _entities[n]->getDim(); }
@@ -419,7 +491,7 @@ static void visibility_browser_apply_cb(Fl_Widget *w, void *data)
   // if the browser is not empty, get the selections made in the
   // browser and apply them into the model
   if(VisibilityList::instance()->getNumEntities()) {
-    CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+    CTX::instance()->meshChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
     bool recursive =
       FlGui::instance()->visibility->butt[0]->value() ? true : false;
     bool allmodels =
@@ -752,7 +824,7 @@ static void _recur_update_selected(Fl_Tree_Item *n)
 
 static void visibility_tree_apply_cb(Fl_Widget *w, void *data)
 {
-  CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+  CTX::instance()->meshChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
   bool recursive =
     FlGui::instance()->visibility->butt[0]->value() ? true : false;
 
@@ -1024,7 +1096,7 @@ static void _apply_visibility(char mode, bool physical,
 
 static void visibility_number_cb(Fl_Widget *w, void *data)
 {
-  CTX::instance()->mesh.changed |= (ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
+  CTX::instance()->meshChanged(ENT_CURVE | ENT_SURFACE | ENT_VOLUME);
 
   // what = 0 for nodes, 1 for elements, 2 for points, 3 for lines, 4
   // for surfaces, 5 for volumes, 6 for physical points, 7 for
@@ -1129,7 +1201,7 @@ static void visibility_interactive_cb(Fl_Widget *w, void *data)
       FlGui::instance()->visibility->butt[1]->value() ? true : false;
     for(int i = 1; i <= 5; i++) // elements, points, curves, surfaces, volumes
       _set_visibility_by_number(i, -1, 1, false, allmodels);
-    CTX::instance()->mesh.changed = ENT_ALL;
+    CTX::instance()->meshChanged();
     drawContext::global()->draw();
     return;
   }
@@ -1143,7 +1215,7 @@ static void visibility_interactive_cb(Fl_Widget *w, void *data)
   std::vector<MElement *> elements;
 
   while(1) {
-    if(what == ENT_ALL) CTX::instance()->mesh.changed = ENT_ALL;
+    if(what == ENT_ALL) CTX::instance()->meshChanged();
     drawContext::global()->draw();
     Msg::StatusGl("Select %s\n[Press %s'q' to abort]", str.c_str(),
                   mode ? "" : "'u' to undo or ");
@@ -1165,7 +1237,7 @@ static void visibility_interactive_cb(Fl_Widget *w, void *data)
     if(ib == 'q') { break; }
   }
 
-  CTX::instance()->mesh.changed = ENT_ALL;
+  CTX::instance()->meshChanged();
   CTX::instance()->pickElements = 0;
   drawContext::global()->draw();
   Msg::StatusGl("");
@@ -1262,7 +1334,8 @@ visibilityWindow::visibilityWindow(int deltaFontSize)
 
   win = new paletteWindow(width, height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Visibility");
+                          "Visibility",
+                          CTX::instance()->visOffset);
   win->box(GMSH_WINDOW_BOX);
 
   Fl_Tabs *o = new Fl_Tabs(WB, WB, width - 2 * WB, height - 3 * WB - BH);
@@ -1593,8 +1666,6 @@ visibilityWindow::visibilityWindow(int deltaFontSize)
     o1->callback(visibility_save_cb);
   }
 
-  win->position(CTX::instance()->visPosition[0],
-                CTX::instance()->visPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;

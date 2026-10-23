@@ -19,7 +19,7 @@ Match geometries and meshes
 @item -1, -2, -3
 Perform 1D, 2D or 3D mesh generation, then exit
 @item -format string
-Select output mesh format: auto, msh1, msh2, msh22, msh3, msh4, msh40, msh41, msh, unv, vtk, wrl, mail, stl, p3d, mesh, bdf, cgns, med, diff, ir3, inp, ply2, celum, su2, x3d, dat, neu, m, key, off, rad, obj (Mesh.Format)
+Select output mesh format: auto, msh1, msh2, msh22, msh3, msh4, msh40, msh41, msh42, msh, unv, vtu, vtk, wrl, mail, stl, p3d, mesh, bdf, cgns, med, diff, ir3, inp, ply2, celum, su2, x3d, dat, neu, m, key, off, rad, obj (Mesh.Format)
 @item -bin
 Create binary files when possible (Mesh.Binary)
 @item -refine
@@ -46,6 +46,8 @@ Create ghost cells (Mesh.PartitionCreateGhostCells)
 Create physical groups for partitions (Mesh.PartitionCreatePhysicals)
 @item -part_topo_pro
 Save the partition topology .pro file (Mesh.PartitionTopologyFile)
+@item -overlap int
+Create partition overlaps after batch mesh generation (Mesh.OverlapLayers)
 @item -preserve_numbering_msh2
 Preserve element numbering in MSH2 format (Mesh.PreserveNumberingMsh2)
 @item -save_all
@@ -54,8 +56,10 @@ Save all elements (Mesh.SaveAll)
 Save nodes with their parametric coordinates (Mesh.SaveParametric)
 @item -save_topology
 Save model topology (Mesh.SaveTopology)
+@item -save_views
+Save all views with the mesh (Mesh.SaveViews)
 @item -algo string
-Select mesh algorithm: auto, meshadapt, del2d, front2d, delquad, quadqs, initial2d, del3d, front3d, mmg3d, hxt, initial3d (Mesh.Algorithm and Mesh.Algorithm3D)
+Select mesh algorithm: auto, meshadapt, del2d, front2d, delquad, quadqs, initial2d, del3d, pdel3d, front3d, mmg3d, hxt, initial3d (Mesh.Algorithm and Mesh.Algorithm3D)
 @item -smooth int
 Set number of mesh smoothing steps (Mesh.Smoothing)
 @item -order int
@@ -150,6 +154,8 @@ Merge next files
 Open next files
 @item -log filename
 Log all messages to filename
+@item -shaders
+Draw with the shader pipeline (General.Shaders)
 @item -a, -g, -m, -s, -p
 Start in automatic, geometry, mesh, solver or post-processing mode (General.InitialModule)
 @item -pid
@@ -175,7 +181,7 @@ Don't modify the locale at startup
 @item -option file
 Parse option file at startup
 @item -convert files
-Convert files into latest binary formats, then exit
+Convert the mesh and the views of each file into a binary MSH 4.2 file (name_new.msh), then exit
 @item -nt int
 Set number of threads (General.NumThreads)
 @item -cpu

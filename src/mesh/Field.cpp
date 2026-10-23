@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -7,8 +7,10 @@
 //   Jonathan Lambrechts
 //
 
+#include <atomic>
 #include <cstdlib>
 #include <limits>
+#include <mutex>
 #include <list>
 #include <cmath>
 #include <fstream>
@@ -27,14 +29,20 @@
 #include "BackgroundMeshTools.h"
 #include "STensor3.h"
 #include "ExtrudeParams.h"
-#include "automaticMeshSizeField.h"
+#if defined(HAVE_OCTREE_SIZE_FIELD)
+#include "OctreeSizeField.h"
+#endif
 #include "fullMatrix.h"
 #include "SPoint3KDTree.h"
 #include "MVertex.h"
+#include "MLine.h"
+#include "MTriangle.h"
+#include "MQuadrangle.h"
 
 #if defined(HAVE_POST)
 #include "PView.h"
 #include "PViewData.h"
+#include "PViewDataGModel.h"
 #endif
 
 #if defined(WIN32) && !defined(__CYGWIN__)
@@ -42,10 +50,6 @@
 #include <io.h>
 #else
 #include <unistd.h>
-#endif
-
-#if defined(HAVE_ANN)
-#include "ANN/ANN.h"
 #endif
 
 Field::~Field()
@@ -92,7 +96,20 @@ Field *FieldManager::newField(int id, const std::string &type_name)
   if(!f) return nullptr;
   f->id = id;
   (*this)[id] = f;
+  // the fields that refer to others by id resolve them again
+  for(auto &it : *this) it.second->updateNeeded = true;
   return f;
+}
+
+static std::recursive_mutex fieldUpdateMutex;
+
+void Field::ensureUpdated()
+{
+  // checked again under the lock, which is recursive as an update can
+  // evaluate other fields (OctreeField)
+  if(!updateNeeded) return;
+  std::lock_guard<std::recursive_mutex> lock(fieldUpdateMutex);
+  if(updateNeeded) update();
 }
 
 int FieldManager::newId()
@@ -124,6 +141,8 @@ void FieldManager::deleteField(int id)
   }
   delete it->second;
   erase(it);
+  // the fields that refer to others by id resolve them again
+  for(auto &f : *this) f.second->updateNeeded = true;
 }
 
 // StructuredField
@@ -182,66 +201,74 @@ public:
   {
     if(_data) delete[] _data;
   }
+  // read the file: false on failure
+  bool read()
+  {
+    try {
+      std::ifstream input;
+      if(_textFormat)
+        input.open(_fileName.c_str());
+      else
+        input.open(_fileName.c_str(), std::ios::binary);
+      if(!input.is_open()) {
+        Msg::Error("Could not open file '%s'", _fileName.c_str());
+        return false;
+      }
+      input.exceptions(std::ifstream::eofbit | std::ifstream::failbit |
+                       std::ifstream::badbit);
+      if(!_textFormat) {
+        input.read((char *)_o, 3 * sizeof(double));
+        input.read((char *)_d, 3 * sizeof(double));
+        input.read((char *)_n, 3 * sizeof(int));
+        int nt = _n[0] * _n[1] * _n[2];
+        if(nt <= 0) {
+          Msg::Error("Field %i: invalid number of data points %d x %d x %d",
+                     this->id, _n[0], _n[1], _n[2]);
+          return false;
+        }
+        if(_data) delete[] _data;
+        _data = new double[nt];
+        input.read((char *)_data, nt * sizeof(double));
+      }
+      else {
+        input >> _o[0] >> _o[1] >> _o[2] >> _d[0] >> _d[1] >> _d[2] >> _n[0] >>
+          _n[1] >> _n[2];
+        int nt = _n[0] * _n[1] * _n[2];
+        if(nt <= 0) {
+          Msg::Error("Field %i: invalid number of data points %d x %d x %d",
+                     this->id, _n[0], _n[1], _n[2]);
+          return false;
+        }
+        if(_data) delete[] _data;
+        _data = new double[nt];
+        for(int i = 0; i < nt; i++) input >> _data[i];
+      }
+      input.close();
+    } catch(...) {
+      Msg::Error("Field %i: error reading file '%s'", this->id,
+                 _fileName.c_str());
+      return false;
+    }
+    for(int i = 0; i < 3; i++) {
+      // if there is a single point, make sure _d[i] != 0
+      if(_n[i] == 1 && !_d[i]) _d[i] = 1.;
+    }
+    if(!_d[0] || !_d[1] || !_d[2]) {
+      Msg::Error("Field %i: Dx, Dy and Dz should be non zero", this->id);
+      return false;
+    }
+    return true;
+  }
+  void update()
+  {
+    if(!updateNeeded) return;
+    _errorStatus = !read();
+    updateNeeded = false;
+  }
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
-    if(updateNeeded) {
-      _errorStatus = false;
-      try {
-        std::ifstream input;
-        if(_textFormat)
-          input.open(_fileName.c_str());
-        else
-          input.open(_fileName.c_str(), std::ios::binary);
-        if(!input.is_open()) {
-          Msg::Error("Could not open file '%s'", _fileName.c_str());
-          return MAX_LC;
-        }
-        input.exceptions(std::ifstream::eofbit | std::ifstream::failbit |
-                         std::ifstream::badbit);
-        if(!_textFormat) {
-          input.read((char *)_o, 3 * sizeof(double));
-          input.read((char *)_d, 3 * sizeof(double));
-          input.read((char *)_n, 3 * sizeof(int));
-          int nt = _n[0] * _n[1] * _n[2];
-          if(nt <= 0) {
-            Msg::Error("Field %i: invalid number of data points %d x %d x %d",
-                       this->id, _n[0], _n[1], _n[2]);
-            return MAX_LC;
-          }
-          if(_data) delete[] _data;
-          _data = new double[nt];
-          input.read((char *)_data, nt * sizeof(double));
-        }
-        else {
-          input >> _o[0] >> _o[1] >> _o[2] >> _d[0] >> _d[1] >> _d[2] >>
-            _n[0] >> _n[1] >> _n[2];
-          int nt = _n[0] * _n[1] * _n[2];
-          if(nt <= 0) {
-            Msg::Error("Field %i: invalid number of data points %d x %d x %d",
-                       this->id, _n[0], _n[1], _n[2]);
-            return MAX_LC;
-          }
-          if(_data) delete[] _data;
-          _data = new double[nt];
-          for(int i = 0; i < nt; i++) input >> _data[i];
-        }
-        input.close();
-      } catch(...) {
-        _errorStatus = true;
-        Msg::Error("Field %i: error reading file '%s'", this->id,
-                   _fileName.c_str());
-      }
-      for(int i = 0; i < 3; i++) {
-        // if there is a single point, make sure _d[i] != 0
-        if(_n[i] == 1 && !_d[i]) _d[i] = 1.;
-      }
-      if(!_d[0] || !_d[1] || !_d[2]) {
-        Msg::Error("Field %i: Dx, Dy and Dz should be non zero", this->id);
-        return MAX_LC;
-      }
-      updateNeeded = false;
-    }
+    ensureUpdated();
     if(_errorStatus) return MAX_LC;
     // tri-linear
     int id[2][3];
@@ -600,28 +627,24 @@ public:
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
+    // the axial range first: a size field made of hundreds of frustums
+    // along an axis (jet nozzles) evaluates most of them outside it
     double dx = x - _x1;
     double dy = y - _y1;
     double dz = z - _z1;
     double x12 = _x2 - _x1;
     double y12 = _y2 - _y1;
     double z12 = _z2 - _z1;
-    double l12 = sqrt(x12 * x12 + y12 * y12 + z12 * z12);
-
-    double l = (dx * x12 + dy * y12 + dz * z12) / l12;
-    double r = sqrt(dx * dx + dy * dy + dz * dz - l * l);
-
-    double u = l / l12; // u varies between 0 (P1) and 1 (P2)
+    double l12sq = x12 * x12 + y12 * y12 + z12 * z12;
+    double u = (dx * x12 + dy * y12 + dz * z12) / l12sq; // 0 at P1, 1 at P2
+    if(!(u >= 0 && u <= 1)) return MAX_LC;
+    double r = sqrt(dx * dx + dy * dy + dz * dz - u * u * l12sq);
     double ri = (1 - u) * _r1i + u * _r2i;
     double ro = (1 - u) * _r1o + u * _r2o;
-    double v = (r - ri) / (ro - ri); // v varies between 0 (inner) and 1 (outer)
-
-    double lc = MAX_LC;
-    if(u >= 0 && u <= 1 && v >= 0 && v <= 1) {
-      lc =
-        (1 - v) * ((1 - u) * _v1i + u * _v2i) + v * ((1 - u) * _v1o + u * _v2o);
-    }
-    return lc;
+    double v = (r - ri) / (ro - ri); // 0 at the inner radius, 1 at the outer
+    if(!(v >= 0 && v <= 1)) return MAX_LC;
+    return (1 - v) * ((1 - u) * _v1i + u * _v2i) +
+           v * ((1 - u) * _v1o + u * _v2o);
   }
 };
 
@@ -1150,25 +1173,19 @@ public:
     options["F"] = new FieldOptionString(
       _f, "Mathematical function to evaluate.", &updateNeeded);
   }
+  void update()
+  {
+    if(!updateNeeded) return;
+    if(!_expr.set_function(_f))
+      Msg::Error("Field %i: invalid matheval expression \"%s\"", this->id,
+                 _f.c_str());
+    updateNeeded = false;
+  }
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
-    double ret = 0;
-    // the critical section is necessary for multi-threaded meshing, as the
-    // evaluator is not thread-safe; this should be fixed as it makes the
-    // MathEvalField not reentrant (i.e. a MathEval field cannot reference
-    // another MathEval field)
-#pragma omp critical(MathEvalField)
-    {
-      if(updateNeeded) {
-        if(!_expr.set_function(_f))
-          Msg::Error("Field %i: invalid matheval expression \"%s\"", this->id,
-                     _f.c_str());
-        updateNeeded = false;
-      }
-      ret = _expr.evaluate(x, y, z, ge);
-    }
-    return ret;
+    ensureUpdated();
+    return _expr.evaluate(x, y, z, ge);
   }
   const char *getName() { return "MathEval"; }
   std::string getDescription()
@@ -1222,37 +1239,26 @@ public:
     options["m23"] =
       new FieldOptionString(_f[5], "[Deprecated]", &updateNeeded, true);
   }
+  void update()
+  {
+    if(!updateNeeded) return;
+    for(int i = 0; i < 6; i++) {
+      if(!_expr.set_function(i, _f[i]))
+        Msg::Error("Field %i: invalid matheval expression \"%s\"", this->id,
+                   _f[i].c_str());
+    }
+    updateNeeded = false;
+  }
   void operator()(double x, double y, double z, SMetric3 &metr,
                   GEntity *ge = nullptr)
   {
-#pragma omp critical(MathEvalFieldAnisoMetric)
-    {
-      if(updateNeeded) {
-        for(int i = 0; i < 6; i++) {
-          if(!_expr.set_function(i, _f[i]))
-            Msg::Error("Field %i: invalid matheval expression \"%s\"", this->id,
-                       _f[i].c_str());
-        }
-        updateNeeded = false;
-      }
-      _expr.evaluate(x, y, z, metr, ge);
-    }
+    ensureUpdated();
+    _expr.evaluate(x, y, z, metr, ge);
   }
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
     SMetric3 metr;
-#pragma omp critical(MathEvalFieldAnisoScalar)
-    {
-      if(updateNeeded) {
-        for(int i = 0; i < 6; i++) {
-          if(!_expr.set_function(i, _f[i]))
-            Msg::Error("Field %i: invalid matheval expression \"%s\"", this->id,
-                       _f[i].c_str());
-        }
-        updateNeeded = false;
-      }
-      _expr.evaluate(x, y, z, metr, ge);
-    }
+    (*this)(x, y, z, metr, ge);
     return metr(0, 0);
   }
   const char *getName() { return "MathEvalAniso"; }
@@ -1543,22 +1549,21 @@ public:
       Msg::Warning("Unknown Field %i", _inField);
       return MAX_LC;
     }
-    double xx, yy, zz;
-#pragma omp critical(ParametricField)
-    {
-      if(updateNeeded) {
-        for(int i = 0; i < 3; i++) {
-          if(!_expr[i].set_function(_f[i]))
-            Msg::Error("Field %i: invalid matheval expression \"%s\"", id,
-                       _f[i].c_str());
-        }
-        updateNeeded = false;
-      }
-      xx = _expr[0].evaluate(x, y, z, ge);
-      yy = _expr[1].evaluate(x, y, z, ge);
-      zz = _expr[2].evaluate(x, y, z, ge);
-    }
+    ensureUpdated();
+    double xx = _expr[0].evaluate(x, y, z, ge);
+    double yy = _expr[1].evaluate(x, y, z, ge);
+    double zz = _expr[2].evaluate(x, y, z, ge);
     return (*field)(xx, yy, zz, ge);
+  }
+  void update()
+  {
+    if(!updateNeeded) return;
+    for(int i = 0; i < 3; i++) {
+      if(!_expr[i].set_function(_f[i]))
+        Msg::Error("Field %i: invalid matheval expression \"%s\"", id,
+                   _f[i].c_str());
+    }
+    updateNeeded = false;
   }
   const char *getName() { return "Param"; }
 };
@@ -1867,19 +1872,21 @@ public:
   {
     return "Take the minimum value of a list of fields.";
   }
+  void update()
+  {
+    if(!updateNeeded) return;
+    _fields.clear();
+    for(auto it = _fieldIds.begin(); it != _fieldIds.end(); it++) {
+      Field *f = (GModel::current()->getFields()->get(*it));
+      if(!f) Msg::Warning("Unknown Field %i", *it);
+      if(f && *it != id) _fields.push_back(f);
+    }
+    updateNeeded = false;
+  }
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
-#pragma omp critical(MinField)
-    if(updateNeeded) {
-      _fields.clear();
-      for(auto it = _fieldIds.begin(); it != _fieldIds.end(); it++) {
-        Field *f = (GModel::current()->getFields()->get(*it));
-        if(!f) Msg::Warning("Unknown Field %i", *it);
-        if(f && *it != id) _fields.push_back(f);
-      }
-      updateNeeded = false;
-    }
+    ensureUpdated();
 
     double v = MAX_LC;
     for(auto f : _fields) {
@@ -1914,19 +1921,21 @@ public:
   {
     return "Take the maximum value of a list of fields.";
   }
+  void update()
+  {
+    if(!updateNeeded) return;
+    _fields.clear();
+    for(auto it = _fieldIds.begin(); it != _fieldIds.end(); it++) {
+      Field *f = (GModel::current()->getFields()->get(*it));
+      if(!f) Msg::Warning("Unknown Field %i", *it);
+      if(f && *it != id) _fields.push_back(f);
+    }
+    updateNeeded = false;
+  }
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
-#pragma omp critical(MaxField)
-    if(updateNeeded) {
-      _fields.clear();
-      for(auto it = _fieldIds.begin(); it != _fieldIds.end(); it++) {
-        Field *f = (GModel::current()->getFields()->get(*it));
-        if(!f) Msg::Warning("Unknown Field %i", *it);
-        if(f && *it != id) _fields.push_back(f);
-      }
-      updateNeeded = false;
-    }
+    ensureUpdated();
 
     double v = -MAX_LC;
     for(auto f : _fields) {
@@ -2062,6 +2071,15 @@ public:
            "if IncludeBoundary is set, and their embedded entities if "
            "IncludeEmbedded is set).";
   }
+  // the entities from the tags (cleared: a tag may have been removed)
+  void update()
+  {
+    if(!updateNeeded) return;
+    for(int dim = 0; dim < 4; dim++) _tags[dim].clear();
+    getRestrictEntities(GModel::current(), _inTags, _tags, _boundary,
+                        _embedded);
+    updateNeeded = false;
+  }
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
@@ -2072,11 +2090,7 @@ public:
       return MAX_LC;
     }
     if(!ge) return (*f)(x, y, z);
-#pragma omp critical(RestrictField)
-    if(updateNeeded) {
-      getRestrictEntities(ge->model(), _inTags, _tags, _boundary, _embedded);
-      updateNeeded = false;
-    }
+    ensureUpdated();
     if(_tags[ge->dim()].count(ge->tag())) return (*f)(x, y, z, ge);
     return MAX_LC;
   }
@@ -2117,15 +2131,20 @@ public:
            "IncludeBoundary is set, and on their embedded entities if "
            "IncludeEmbedded is set), and VOut outside.";
   }
+  // the entities from the tags (cleared: a tag may have been removed)
+  void update()
+  {
+    if(!updateNeeded) return;
+    for(int dim = 0; dim < 4; dim++) _tags[dim].clear();
+    getRestrictEntities(GModel::current(), _inTags, _tags, _boundary,
+                        _embedded);
+    updateNeeded = false;
+  }
   using Field::operator();
   double operator()(double x, double y, double z, GEntity *ge = nullptr)
   {
     if(!ge) return MAX_LC;
-#pragma omp critical(ConstantField)
-    if(updateNeeded) {
-      getRestrictEntities(ge->model(), _inTags, _tags, _boundary, _embedded);
-      updateNeeded = false;
-    }
+    ensureUpdated();
     if(_tags[ge->dim()].count(ge->tag())) return _vIn;
     return _vOut;
   }
@@ -2141,24 +2160,17 @@ struct AttractorInfo {
   double u, v;
 };
 
-#if defined(HAVE_ANN)
-
 class AttractorAnisoCurveField : public Field {
 private:
-  ANNkd_tree *_kdTree;
-  ANNpointArray _zeroNodes;
-  ANNidxArray _index;
-  ANNdistArray _dist;
+  SPoint3Search _search;
   std::list<int> _curveTags;
   double _dMin, _dMax, _lMinTangent, _lMaxTangent, _lMinNormal, _lMaxNormal;
   int _sampling;
   std::vector<SVector3> _tg;
 
 public:
-  AttractorAnisoCurveField() : _kdTree(nullptr), _zeroNodes(nullptr)
+  AttractorAnisoCurveField()
   {
-    _index = new ANNidx[1];
-    _dist = new ANNdist[1];
     _sampling = 20;
     updateNeeded = true;
     _dMin = 0.1;
@@ -2216,13 +2228,6 @@ public:
     GModel::current()->getGEOInternals()->synchronize(GModel::current());
   }
   virtual bool isotropic() const { return false; }
-  ~AttractorAnisoCurveField()
-  {
-    if(_kdTree) delete _kdTree;
-    if(_zeroNodes) annDeallocPts(_zeroNodes);
-    delete[] _index;
-    delete[] _dist;
-  }
   const char *getName() { return "AttractorAnisoCurve"; }
   std::string getDescription()
   {
@@ -2233,14 +2238,8 @@ public:
   }
   void update()
   {
-    if(_zeroNodes) {
-      annDeallocPts(_zeroNodes);
-      delete _kdTree;
-    }
-    int totpoints = _sampling * _curveTags.size();
-    if(totpoints) { _zeroNodes = annAllocPts(totpoints, 3); }
-    _tg.resize(totpoints);
-    int k = 0;
+    _search.clear();
+    _tg.clear();
     for(auto it = _curveTags.begin(); it != _curveTags.end(); ++it) {
       GEdge *e = GModel::current()->getEdgeByTag(*it);
       if(e) {
@@ -2249,31 +2248,29 @@ public:
           Range<double> b = e->parBounds(0);
           double t = b.low() + u * (b.high() - b.low());
           GPoint gp = e->point(t);
-          SVector3 d = e->firstDer(t);
-          _zeroNodes[k][0] = gp.x();
-          _zeroNodes[k][1] = gp.y();
-          _zeroNodes[k][2] = gp.z();
-          _tg[k] = d;
-          _tg[k].normalize();
-          k++;
+          _search.points().push_back(SPoint3(gp.x(), gp.y(), gp.z()));
+          _tg.push_back(e->firstDer(t));
+          _tg.back().normalize();
         }
       }
       else {
         Msg::Warning("Unknown curve %d", *it);
       }
     }
-    _kdTree = new ANNkd_tree(_zeroNodes, totpoints, 3);
+    _search.build();
     updateNeeded = false;
   }
   void operator()(double x, double y, double z, SMetric3 &metr,
                   GEntity *ge = nullptr)
   {
-    if(updateNeeded) update();
-    double xyz[3] = {x, y, z};
-    // critical section to avoid crash (still incorrect) - use Distance instead
-#pragma omp critical(AttractorAnisoCurveFieldMetric)
-    _kdTree->annkSearch(xyz, 1, _index, _dist);
-    double d = sqrt(_dist[0]);
+    ensureUpdated();
+    double d2;
+    std::size_t i = _search.nearest(SPoint3(x, y, z), &d2);
+    if(i == _search.size()) {
+      metr = SMetric3(1. / (MAX_LC * MAX_LC));
+      return;
+    }
+    double d = sqrt(d2);
     double lTg = d < _dMin ? _lMinTangent :
                  d > _dMax ? _lMaxTangent :
                              _lMinTangent + (_lMaxTangent - _lMinTangent) *
@@ -2282,7 +2279,7 @@ public:
                 d > _dMax ? _lMaxNormal :
                             _lMinNormal + (_lMaxNormal - _lMinNormal) *
                                             (d - _dMin) / (_dMax - _dMin);
-    SVector3 t = _tg[_index[0]];
+    SVector3 t = _tg[i];
     SVector3 n0 = crossprod(t, fabs(t(0)) > fabs(t(1)) ? SVector3(0, 1, 0) :
                                                          SVector3(1, 0, 0));
     SVector3 n1 = crossprod(t, n0);
@@ -2290,17 +2287,12 @@ public:
   }
   virtual double operator()(double X, double Y, double Z, GEntity *ge = nullptr)
   {
-    if(updateNeeded) update();
-    double xyz[3] = {X, Y, Z};
-    // critical section to avoid crash (still incorrect) - use Distance instead
-#pragma omp critical(AttractorAnisoCurveFieldScalar)
-    _kdTree->annkSearch(xyz, 1, _index, _dist);
-    double d = sqrt(_dist[0]);
-    return std::max(d, 0.05);
+    ensureUpdated();
+    double d2;
+    if(_search.nearest(SPoint3(X, Y, Z), &d2) == _search.size()) return MAX_LC;
+    return std::max(sqrt(d2), 0.05);
   }
 };
-
-#endif // ANN
 
 class OctreeField : public Field {
 private:
@@ -2431,12 +2423,9 @@ private:
   }
   void update()
   {
-    if(updateNeeded) {
-      updateNeeded = false;
-      if(_root) {
-        delete _root;
-        _root = nullptr;
-      }
+    if(updateNeeded && _root) {
+      delete _root;
+      _root = nullptr;
     }
     if(!_root) {
       _inField = _inFieldId >= 0 ?
@@ -2451,11 +2440,13 @@ private:
       _root->init(bounds.min().x(), bounds.min().y(), bounds.min().z(), _l0,
                   *_inField, 4);
     }
+    updateNeeded = false;
   }
   virtual double operator()(double X, double Y, double Z, GEntity *ge = nullptr)
   {
+    ensureUpdated();
+    if(!_root) return MAX_LC;
     SPoint3 xmin = bounds.min();
-    SVector3 d = bounds.max() - xmin;
     return _root->evaluate((X - xmin.x()) / _l0, (Y - xmin.y()) / _l0,
                            (Z - xmin.z()) / _l0);
   }
@@ -2501,7 +2492,9 @@ class DistanceField : public Field {
   SPoint3Cloud _pc;
   SPoint3CloudAdaptor<SPoint3Cloud> _pc2kdtree;
   SPoint3KDTree *_kdtree;
-  std::size_t _outIndex;
+  // the point nearest to the last evaluation, for getAttractorInfo()
+  // (boundary layers, serial); atomic as evaluations run in parallel
+  std::atomic<std::size_t> _outIndex;
 
 public:
   DistanceField() : _pc2kdtree(_pc), _kdtree(nullptr), _outIndex(0)
@@ -2564,8 +2557,9 @@ public:
   }
   std::pair<AttractorInfo, SPoint3> getAttractorInfo() const
   {
-    if(_outIndex < _infos.size() && _outIndex < _pc.pts.size())
-      return std::make_pair(_infos[_outIndex], _pc.pts[_outIndex]);
+    const std::size_t i = _outIndex.load(std::memory_order_relaxed);
+    if(i < _infos.size() && i < _pc.pts.size())
+      return std::make_pair(_infos[i], _pc.pts[i]);
     return std::make_pair(AttractorInfo(), SPoint3());
   }
   void update()
@@ -2639,169 +2633,208 @@ public:
   using Field::operator();
   virtual double operator()(double X, double Y, double Z, GEntity *ge = nullptr)
   {
-    update();
+    ensureUpdated();
     if(!_kdtree) return MAX_LC;
     double pt[3] = {X, Y, Z};
     nanoflann::KNNResultSet<double> res(1);
+    std::size_t index = 0;
     double outDistSqr;
-    res.init(&_outIndex, &outDistSqr);
+    res.init(&index, &outDistSqr);
     _kdtree->findNeighbors(res, &pt[0], nanoflann::SearchParams(10));
+    _outIndex.store(index, std::memory_order_relaxed);
     return sqrt(outDistSqr);
   }
 };
 
+class search {
+public:
+  std::vector<double> sizes;
+  SPoint3Cloud pc;
+  SPoint3CloudAdaptor<SPoint3Cloud> pcadaptor;
+  SPoint3KDTree *kdtree;
+  search() : pcadaptor(pc), kdtree(nullptr) {}
+  ~search() { if(kdtree) delete kdtree; }
+};
+
 class ExtendField : public Field {
-  std::list<int> _tagCurves, _tagSurfaces;
-  std::vector<double> _sizeCurves, _sizeSurfaces;
-  SPoint3Cloud _pcCurves, _pcSurfaces;
-  SPoint3CloudAdaptor<SPoint3Cloud> _pc2kdtreeCurves, _pc2kdtreeSurfaces;
-  SPoint3KDTree *_kdtreeCurves, *_kdtreeSurfaces;
-  double _distMax, _sizeMax, _power;
+  std::list<int> _surfaceTags, _volumeTags;
+  std::set<GEntity*> _entities;
+  std::map<GEntity*, search> _searchCurves, _searchSurfaces;
+  double _sizeMax, _ratio;
+  bool _embedded;
 public:
   ExtendField()
-    : _pc2kdtreeCurves(_pcCurves), _pc2kdtreeSurfaces(_pcSurfaces),
-      _kdtreeCurves(nullptr), _kdtreeSurfaces(nullptr)
   {
-    _distMax = 1.;
-    _sizeMax = 1.;
-    _power = 1.;
-    options["CurvesList"] = new FieldOptionList(
-      _tagCurves, "Tags of curves in the geometric model", &updateNeeded);
+    _sizeMax = MAX_LC;
+    _ratio = 1.2;
+    _embedded = true;
     options["SurfacesList"] = new FieldOptionList(
-      _tagSurfaces, "Tags of surfaces in the geometric model", &updateNeeded);
-    options["DistMax"] = new FieldOptionDouble(
-      _distMax, "Maximum distance of the size extension");
+      _surfaceTags, "Tags of model surfaces on which to apply the field",
+      &updateNeeded);
+    options["VolumesList"] = new FieldOptionList(
+      _volumeTags, "Tags of model volumes on which to apply the field",
+      &updateNeeded);
     options["SizeMax"] = new FieldOptionDouble(
-      _sizeMax, "Mesh size outside DistMax");
-    options["Power"] = new FieldOptionDouble(
-      _power, "Power exponent used to interpolate the mesh size");
+      _sizeMax, "Mesh size away from boundaries");
+    options["Ratio"] = new FieldOptionDouble(
+      _ratio, "Element size growth ratio (>= 1)");
+    options["IncludeEmbedded"] = new FieldOptionBool(
+      _embedded, "Include embedded entities", &updateNeeded);
   }
-  ~ExtendField()
-  {
-    if(_kdtreeCurves) delete _kdtreeCurves;
-    if(_kdtreeSurfaces) delete _kdtreeSurfaces;
-  }
+  ~ExtendField() {}
   const char *getName() { return "Extend"; }
   std::string getDescription()
   {
-    return "Compute an extension of the mesh sizes from the given boundary "
-           "curves (resp. surfaces) inside the surfaces (resp. volumes) "
-           "being meshed. If the mesh size on the boundary, computed "
-           "as the local average length of the edges of the boundary elements, "
-           "is denoted by SizeBnd, the extension is computed as:\n\n"
-           "  F = f * SizeBnd + (1 - f) * SizeMax, if d < DistMax\n\n"
-           "  F = SizeMax, if d >= DistMax\n\n"
-           "where d denotes the distance to the boundary and "
-           "f = ((DistMax - d) / DistMax)^Power.";
+    return "Compute an extension of the boundary mesh sizes into the given "
+           "surfaces (resp. volumes) using a weighted harmonic mean of the "
+           "boundary sizes, with a prescribed element growth ratio. The size "
+           "at a point P located at distance d_i from the i-th boundary entity "
+           "is computed as:\n\n"
+           "  F = min(SizeMax, (Sum_i w_i) / (Sum_i w_i / s_i)),\n\n"
+           "with w_i = 1 / d_i^2 and s_i = SizeBnd_i + (Ratio - 1) * d_i, "
+           "where SizeBnd_i denotes the size of the closest element to P "
+           "on the i-th boundary entity. Treat embedded entities as part of "
+           "the boundary if IncludeEmbedded is set.";
   }
   void recomputeCurves()
   {
-    _sizeCurves.clear();
-    _pcCurves.pts.clear();
-    if(_kdtreeCurves) delete _kdtreeCurves;
-    for(auto t : _tagCurves) {
-      GEdge *ge = GModel::current()->getEdgeByTag(t);
-      if(ge) {
-        for(auto e : ge->lines) {
-          _pcCurves.pts.push_back(e->barycenter());
-          _sizeCurves.push_back(e->getEdge(0).length());
+    _searchCurves.clear();
+    for(auto ge : _entities) {
+      if(ge->dim() != 2) continue;
+      GFace *gf = static_cast<GFace*>(ge);
+      std::vector<GEdge *> edges = gf->edges();
+      if(_embedded) {
+        std::vector<GEdge *> emb = gf->embeddedEdges();
+        edges.insert(edges.end(), emb.begin(), emb.end());
+      }
+      for(auto ged : edges) {
+        auto &s = _searchCurves[ged];
+        if(s.sizes.empty()) {
+          for(auto e : ged->lines) {
+            s.sizes.push_back(e->getEdge(0).length());
+            s.pc.pts.push_back(e->barycenter());
+          }
+          if(!s.sizes.empty()) {
+            s.kdtree = new SPoint3KDTree
+              (3, s.pcadaptor, nanoflann::KDTreeSingleIndexAdaptorParams(10));
+            s.kdtree->buildIndex();
+          }
         }
       }
-      else {
-        Msg::Warning("Unknown curve %d", t);
-      }
-    }
-    if(_sizeCurves.empty()) {
-      _kdtreeCurves = nullptr;
-    }
-    else {
-      _kdtreeCurves = new SPoint3KDTree(3, _pc2kdtreeCurves,
-                                        nanoflann::KDTreeSingleIndexAdaptorParams(10));
-      _kdtreeCurves->buildIndex();
     }
   }
   void recomputeSurfaces()
   {
-    _sizeSurfaces.clear();
-    _pcSurfaces.pts.clear();
-    if(_kdtreeSurfaces) delete _kdtreeSurfaces;
-    for(auto t : _tagSurfaces) {
-      GFace *gf = GModel::current()->getFaceByTag(t);
-      if(gf) {
-        for(auto e : gf->triangles) {
-          _pcSurfaces.pts.push_back(e->barycenter());
-          double s = e->getEdge(0).length() + e->getEdge(1).length() +
-            e->getEdge(2).length();
-          _sizeSurfaces.push_back(s / 3.);
+    _searchSurfaces.clear();
+    for(auto ge : _entities) {
+      if(ge->dim() != 3) continue;
+      GRegion *gr = static_cast<GRegion*>(ge);
+      std::vector<GFace *> faces = gr->faces();
+      if(_embedded) {
+        std::vector<GFace *> emb = gr->embeddedFaces();
+        faces.insert(faces.end(), emb.begin(), emb.end());
+      }
+      for(auto gf : faces) {
+        auto &s = _searchSurfaces[gf];
+        if(s.sizes.empty()) {
+          for(auto e : gf->triangles) {
+            double l = e->getEdge(0).length() + e->getEdge(1).length() +
+              e->getEdge(2).length();
+            s.sizes.push_back(l / 3.);
+            s.pc.pts.push_back(e->barycenter());
+          }
+          for(auto e : gf->quadrangles) {
+            double l = e->getEdge(0).length() + e->getEdge(1).length() +
+              e->getEdge(2).length() + e->getEdge(3).length();
+            s.sizes.push_back(l / 4.);
+            s.pc.pts.push_back(e->barycenter());
+          }
+          if(!s.sizes.empty()) {
+            s.kdtree = new SPoint3KDTree
+              (3, s.pcadaptor, nanoflann::KDTreeSingleIndexAdaptorParams(10));
+            s.kdtree->buildIndex();
+          }
         }
       }
-      else {
+    }
+  }
+  // the search trees on what is meshed of the boundaries (the curves when
+  // meshing surfaces, the surfaces when meshing volumes), rebuilt before each
+  // meshing pass by FieldManager::initialize()
+  void update()
+  {
+    _entities.clear();
+    for(auto t : _surfaceTags) {
+      GFace *gf = GModel::current()->getFaceByTag(t);
+      if(gf)
+        _entities.insert(gf);
+      else
         Msg::Warning("Unknown surface %d", t);
-      }
     }
-    if(_sizeSurfaces.empty()) {
-      _kdtreeSurfaces = nullptr;
+    for(auto t : _volumeTags) {
+      GRegion *gr = GModel::current()->getRegionByTag(t);
+      if(gr)
+        _entities.insert(gr);
+      else
+        Msg::Warning("Unknown volume %d", t);
     }
-    else {
-      _kdtreeSurfaces = new SPoint3KDTree(3, _pc2kdtreeSurfaces,
-                                          nanoflann::KDTreeSingleIndexAdaptorParams(10));
-      _kdtreeSurfaces->buildIndex();
-    }
+    recomputeCurves();
+    recomputeSurfaces();
+    updateNeeded = false;
   }
   using Field::operator();
   virtual double operator()(double X, double Y, double Z, GEntity *ge = nullptr)
   {
     if(!ge) return MAX_LC;
     if(ge->dim() != 2 && ge->dim() != 3) return MAX_LC;
-    if(ge->dim() == 2 && _tagCurves.empty()) return MAX_LC;
-    if(ge->dim() == 3 && _tagSurfaces.empty()) return MAX_LC;
-#pragma omp critical(ExtendFieldCurves)
-    if(updateNeeded ||
-       (ge->dim() == 2 && _tagCurves.size() && _sizeCurves.empty())) {
-      // we are meshing our first surface; recompute distance to the elements on
-      // curves, and invalidate the distance to surfaces
-      recomputeCurves();
-      _sizeSurfaces.clear();
-      updateNeeded = false;
-    }
-#pragma omp critical(ExtendFieldSurfaces)
-    if(updateNeeded ||
-       (ge->dim() == 3 && _tagSurfaces.size() && _sizeSurfaces.empty())) {
-      // we are meshing our first volume; recompute distance to the elements on
-      // surfaces, and invalidate the distance to curves (to be ready for
-      // subsequent surface meshing pass)
-      recomputeSurfaces();
-      _sizeCurves.clear();
-      updateNeeded = false;
-    }
+
+    ensureUpdated();
+
+    if(_entities.find(ge) == _entities.end()) return MAX_LC;
+
     double pt[3] = {X, Y, Z};
-    nanoflann::KNNResultSet<double> res(1);
-    std::size_t index = 0;
-    double dist2 = 0., sbnd = 0.;
-    res.init(&index, &dist2);
-    if(ge->dim() == 2 && _kdtreeCurves) {
-      _kdtreeCurves->findNeighbors(res, &pt[0], nanoflann::SearchParams(10));
-      sbnd = _sizeCurves[index];
+    std::vector<GEntity *> bnd = ge->boundaryEntities();
+    if(_embedded && ge->dim() == 2) {
+      std::vector<GEdge *> emb = static_cast<GFace*>(ge)->embeddedEdges();
+      for(auto e : emb) bnd.push_back(e);
     }
-    else if(ge->dim() == 3 && _kdtreeSurfaces) {
-      _kdtreeSurfaces->findNeighbors(res, &pt[0], nanoflann::SearchParams(10));
-      sbnd = _sizeSurfaces[index];
+    if(_embedded && ge->dim() == 3) {
+      std::vector<GFace *> emb = static_cast<GRegion*>(ge)->embeddedFaces();
+      for(auto e : emb) bnd.push_back(e);
     }
-    if(sbnd <= 0 || _distMax <= 0 || _sizeMax <= 0) return MAX_LC;
-    double d = sqrt(dist2);
-    if(d >= _distMax) return _sizeMax;
-    double f = (_distMax - d) / _distMax;
-    if(_power != 1.) {
-      f = std::pow(f, _power);
+    std::vector<double> sbnd(bnd.size(), 0.), dbnd(bnd.size(), 0.);
+    auto &search = (ge->dim() == 2) ? _searchCurves : _searchSurfaces;
+    for(std::size_t i = 0; i < bnd.size(); i++) {
+      nanoflann::KNNResultSet<double> res(1);
+      std::size_t index = 0;
+      double dist2 = 0.;
+      res.init(&index, &dist2);
+      auto it = search.find(bnd[i]); // not operator[]: threads read it
+      if(it != search.end() && it->second.kdtree) {
+        it->second.kdtree->findNeighbors(res, &pt[0],
+                                         nanoflann::SearchParams(10));
+        sbnd[i] = it->second.sizes[index];
+      }
+      // "unscale" the boundary size according to the per-entity and/or the
+      // global mesh size factor, so that, if a factor is applied, it will be on
+      // the interpolated "specified" mesh size values
+      if(ge->getMeshSizeFactor() != 1.0) sbnd[i] /= ge->getMeshSizeFactor();
+      sbnd[i] /= CTX::instance()->mesh.lcFactor;
+      dbnd[i] = sqrt(dist2);
     }
-    // "unscale" the boundary size according to the per-entity and/or the global
-    // mesh size factor, so that, if a factor is applied, it will be on the
-    // interpolated "specified" mesh size values
-    if(ge && ge->getMeshSizeFactor() != 1.0)
-      sbnd /= ge->getMeshSizeFactor();
-    sbnd /= CTX::instance()->mesh.lcFactor;
-    double s = f * sbnd + (1. - f) * _sizeMax;
-    return s;
+
+    const int p = 2;
+    double num = 0., den = 0., r = (_ratio < 1.) ? 1. : _ratio;
+    for(std::size_t i = 0; i < bnd.size(); i++) {
+      if(!sbnd[i] || !dbnd[i]) continue; // ignore boundary with no elements
+      double wi = 1. / std::pow(dbnd[i], p);
+      double si = sbnd[i] + (r - 1) * dbnd[i];
+      num += wi / si;
+      den += wi;
+    }
+    if(num > 0 && den > 0)
+      return std::min(_sizeMax, den / num);
+    return MAX_LC;
   }
 };
 
@@ -3247,13 +3280,12 @@ FieldManager::FieldManager()
   mapTypeName["ExternalProcess"] = new FieldFactoryT<ExternalProcessField>();
   mapTypeName["MathEval"] = new FieldFactoryT<MathEvalField>();
   mapTypeName["MathEvalAniso"] = new FieldFactoryT<MathEvalFieldAniso>();
-#if defined(HAVE_ANN)
   mapTypeName["AttractorAnisoCurve"] =
     new FieldFactoryT<AttractorAnisoCurveField>();
-#endif
   mapTypeName["MaxEigenHessian"] = new FieldFactoryT<MaxEigenHessianField>();
-  mapTypeName["AutomaticMeshSizeField"] =
-    new FieldFactoryT<automaticMeshSizeField>();
+#if defined(HAVE_OCTREE_SIZE_FIELD)
+  mapTypeName["AutomaticMeshSizeField"] = new FieldFactoryT<OctreeSizeField>();
+#endif
   _backgroundField = -1;
 }
 
@@ -3304,16 +3336,20 @@ void Field::putOnNewView(int viewTag)
 void Field::putOnView(PView *view, int comp)
 {
   PViewData *data = view->getData();
+  // list data has no model entities
+  bool model = dynamic_cast<PViewDataGModel *>(data) != nullptr;
   for(int ent = 0; ent < data->getNumEntities(0); ent++) {
-    GEntity *ge = data->getEntity(0, ent);
+    GEntity *ge = model ? data->getEntity(0, ent) : nullptr;
     for(int ele = 0; ele < data->getNumElements(0, ent); ele++) {
       if(data->skipElement(0, ent, ele)) continue;
+      int numComp = data->getNumComponents(0, ent, ele);
       for(int nod = 0; nod < data->getNumNodes(0, ent, ele); nod++) {
         double x, y, z;
         data->getNode(0, ent, ele, nod, x, y, z);
         double val = (*this)(x, y, z, ge);
-        for(int comp = 0; comp < data->getNumComponents(0, ent, ele); comp++)
-          data->setValue(0, ent, ele, nod, comp, val);
+        // all the components if comp < 0
+        for(int c = 0; c < numComp; c++)
+          if(comp < 0 || c == comp) data->setValue(0, ent, ele, nod, c, val);
       }
     }
   }
@@ -3322,7 +3358,6 @@ void Field::putOnView(PView *view, int comp)
   data->setName(oss.str());
   data->finalize();
   view->setChanged(true);
-  data->destroyAdaptiveData();
 }
 #endif
 

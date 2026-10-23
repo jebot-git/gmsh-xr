@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -68,8 +68,11 @@ StringXString GeneralOptions_String[] = {
 
   { F|O, "GraphicsFont" , opt_general_graphics_font , "Helvetica" ,
     "Font used in the graphic window" },
-  { F|O, "GraphicsFontEngine" , opt_general_graphics_font_engine , "Native" ,
-    "Set graphics font engine (Native, StringTexture, Cairo)" },
+  { F|O, "GraphicsFontEngine" , opt_general_graphics_font_engine , "Embedded" ,
+    "Set graphics font engine (Embedded: the fonts compiled into Gmsh, as in "
+    "the pictures made without a window; StringTexture: the fonts of the "
+    "system, for scripts the embedded fonts lack; Native: the fonts of the "
+    "system drawn directly, with the fixed function pipeline only)" },
   { F|O, "GraphicsFontTitle" , opt_general_graphics_font_title , "Helvetica" ,
     "Font used in the graphic window for titles" },
 
@@ -328,12 +331,12 @@ StringXString ViewOptions_String[] = {
   { F|O, "Attributes" , opt_view_attributes , "" ,
     "Optional string attached to the view. If the string contains 'AlwaysVisible', "
     "the view will not be hidden when new ones are merged."},
-  { F|O, "AxesFormatX" , opt_view_axes_format0 , "%.3g" ,
-    "Number format for X-axis (in standard C form)" },
-  { F|O, "AxesFormatY" , opt_view_axes_format1 , "%.3g" ,
-    "Number format for Y-axis (in standard C form)" },
-  { F|O, "AxesFormatZ" , opt_view_axes_format2 , "%.3g" ,
-    "Number format for Z-axis (in standard C form)" },
+  { F|O, "AxesFormatX" , opt_view_axes_format0 , "" ,
+    "Number format for X-axis (in standard C form); use adaptive automatic default if empty" },
+  { F|O, "AxesFormatY" , opt_view_axes_format1 , "" ,
+    "Number format for Y-axis (in standard C form); use adaptive automatic default if empty" },
+  { F|O, "AxesFormatZ" , opt_view_axes_format2 , "" ,
+    "Number format for Z-axis (in standard C form); use adaptive automatic default if empty" },
   { F|O, "AxesLabelX" , opt_view_axes_label0 , "" ,
     "X-axis label" },
   { F|O, "AxesLabelY" , opt_view_axes_label1 , "" ,
@@ -363,8 +366,8 @@ StringXString ViewOptions_String[] = {
 
   { F,   "Name" , opt_view_name , "" ,
     "Default post-processing view name" },
-  { F|O, "NumberFormat" , opt_view_number_format , "%.3g" ,
-    "Number format (in standard C form)" },
+  { F|O, "NumberFormat" , opt_view_number_format , "" ,
+    "Number format (in standard C form); use adaptive automatic default if empty" },
 
   { F|O, "Stipple0" , opt_view_stipple0 , "1*0x1F1F" ,
     "First stippling pattern" },
@@ -408,7 +411,10 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "AlphaBlending" , opt_general_alpha_blending , 1. ,
     "Enable alpha blending (transparency) in post-processing views" },
   { F|O, "Antialiasing" , opt_general_antialiasing , 0. ,
-    "Use multisample antialiasing (will slow down rendering)" },
+    "Use multisample antialiasing in the graphic window (will slow down "
+    "rendering); the pictures drawn apart from it (with Print.Width, "
+    "Print.Height or Print.Supersampling, or without a window) are smoothed "
+    "by Print.Supersampling instead" },
   { F|O, "ArrowHeadRadius" , opt_general_arrow_head_radius , 0.12 ,
     "Relative radius of arrow head" },
   { F|O, "ArrowStemLength" , opt_general_arrow_stem_length , 0.56 ,
@@ -435,12 +441,21 @@ StringXNumber GeneralOptions_Number[] = {
     "Minimum Y-axis coordinate" },
   { F|O, "AxesMinZ" , opt_general_axes_zmin , 0. ,
     "Minimum Z-axis coordinate" },
-  { F|O, "AxesTicsX" , opt_general_axes_tics0 , 5. ,
-    "Number of tics on the X-axis" },
-  { F|O, "AxesTicsY" , opt_general_axes_tics1 , 5. ,
-    "Number of tics on the Y-axis" },
-  { F|O, "AxesTicsZ" , opt_general_axes_tics2 , 5. ,
-    "Number of tics on the Z-axis" },
+  { F|O, "AxesTicksX" , opt_general_axes_ticks0 , 5. ,
+    "Number of ticks on the X-axis (about that many, when the labels "
+    "are placed at round values)" },
+  { F|O, "AxesTicksY" , opt_general_axes_ticks1 , 5. ,
+    "Number of ticks on the Y-axis (about that many, when the labels "
+    "are placed at round values)" },
+  { F|O, "AxesTicksZ" , opt_general_axes_ticks2 , 5. ,
+    "Number of ticks on the Z-axis (about that many, when the labels "
+    "are placed at round values)" },
+  { F|O|D, "AxesTicsX" , opt_general_axes_ticks0 , 5. ,
+    "[Deprecated]" },
+  { F|O|D, "AxesTicsY" , opt_general_axes_ticks1 , 5. ,
+    "[Deprecated]" },
+  { F|O|D, "AxesTicsZ" , opt_general_axes_ticks2 , 5. ,
+    "[Deprecated]" },
   { F|O, "AxesValueMaxX" , opt_general_axes_value_xmax , 1. ,
     "Maximum X-axis forced value" },
   { F|O, "AxesValueMaxY" , opt_general_axes_value_ymax , 1. ,
@@ -476,6 +491,10 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "BoundingBoxSize" , opt_general_lc, 1. ,
     "Overall bounding box size (read-only)" },
 
+  { F|O, "Brightness" , opt_general_brightness , 1. ,
+    "Brightness of the lit surfaces, a factor on the light (applied in linear "
+    "light in studio shading, and so that a factor looks the same in classic "
+    "shading)" },
   { F|O, "Camera" , opt_general_camera_mode, 0. ,
     "Enable camera view mode" },
   { F|O, "CameraAperture" , opt_general_camera_aperture, 40. ,
@@ -484,55 +503,57 @@ StringXNumber GeneralOptions_Number[] = {
     "Eye separation ratio in % for stereo rendering" },
   { F|O, "CameraFocalLengthRatio" , opt_general_focallength_ratio, 1.0 ,
     "Camera Focal length ratio" },
-  { F,   "Clip0A" , opt_general_clip0a , 1.0 ,
+  { F|O, "Clip0A" , opt_general_clip0a , 1.0 ,
     "First coefficient in equation for clipping plane 0 (`A' in `AX+BY+CZ+D=0')" },
-  { F,   "Clip0B" , opt_general_clip0b , 0.0 ,
+  { F|O, "Clip0B" , opt_general_clip0b , 0.0 ,
     "Second coefficient in equation for clipping plane 0 (`B' in `AX+BY+CZ+D=0')" },
-  { F,   "Clip0C" , opt_general_clip0c , 0.0 ,
+  { F|O, "Clip0C" , opt_general_clip0c , 0.0 ,
     "Third coefficient in equation for clipping plane 0 (`C' in `AX+BY+CZ+D=0')" },
-  { F,   "Clip0D" , opt_general_clip0d , 0.0 ,
+  { F|O, "Clip0D" , opt_general_clip0d , 0.0 ,
     "Fourth coefficient in equation for clipping plane 0 (`D' in `AX+BY+CZ+D=0')" },
-  { F,   "Clip1A" , opt_general_clip1a , 0.0 ,
+  { F|O, "Clip1A" , opt_general_clip1a , 0.0 ,
     "First coefficient in equation for clipping plane 1" },
-  { F,   "Clip1B" , opt_general_clip1b , 1.0 ,
+  { F|O, "Clip1B" , opt_general_clip1b , 1.0 ,
     "Second coefficient in equation for clipping plane 1" },
-  { F,   "Clip1C" , opt_general_clip1c , 0.0 ,
+  { F|O, "Clip1C" , opt_general_clip1c , 0.0 ,
     "Third coefficient in equation for clipping plane 1" },
-  { F,   "Clip1D" , opt_general_clip1d , 0.0 ,
+  { F|O, "Clip1D" , opt_general_clip1d , 0.0 ,
     "Fourth coefficient in equation for clipping plane 1" },
-  { F,   "Clip2A" , opt_general_clip2a , 0.0 ,
+  { F|O, "Clip2A" , opt_general_clip2a , 0.0 ,
     "First coefficient in equation for clipping plane 2" },
-  { F,   "Clip2B" , opt_general_clip2b , 0.0 ,
+  { F|O, "Clip2B" , opt_general_clip2b , 0.0 ,
     "Second coefficient in equation for clipping plane 2" },
-  { F,   "Clip2C" , opt_general_clip2c , 1.0 ,
+  { F|O, "Clip2C" , opt_general_clip2c , 1.0 ,
     "Third coefficient in equation for clipping plane 2" },
-  { F,   "Clip2D" , opt_general_clip2d , 0.0 ,
+  { F|O, "Clip2D" , opt_general_clip2d , 0.0 ,
     "Fourth coefficient in equation for clipping plane 2" },
-  { F,   "Clip3A" , opt_general_clip3a , -1.0 ,
+  { F|O, "Clip3A" , opt_general_clip3a , -1.0 ,
     "First coefficient in equation for clipping plane 3" },
-  { F,   "Clip3B" , opt_general_clip3b , 0.0 ,
+  { F|O, "Clip3B" , opt_general_clip3b , 0.0 ,
     "Second coefficient in equation for clipping plane 3" },
-  { F,   "Clip3C" , opt_general_clip3c , 0.0 ,
+  { F|O, "Clip3C" , opt_general_clip3c , 0.0 ,
     "Third coefficient in equation for clipping plane 3" },
-  { F,   "Clip3D" , opt_general_clip3d , 1.0 ,
+  { F|O, "Clip3D" , opt_general_clip3d , 1.0 ,
     "Fourth coefficient in equation for clipping plane 3" },
-  { F,   "Clip4A" , opt_general_clip4a , 0.0 ,
+  { F|O, "Clip4A" , opt_general_clip4a , 0.0 ,
     "First coefficient in equation for clipping plane 4" },
-  { F,   "Clip4B" , opt_general_clip4b , -1.0 ,
+  { F|O, "Clip4B" , opt_general_clip4b , -1.0 ,
     "Second coefficient in equation for clipping plane 4" },
-  { F,   "Clip4C" , opt_general_clip4c , 0.0 ,
+  { F|O, "Clip4C" , opt_general_clip4c , 0.0 ,
     "Third coefficient in equation for clipping plane 4" },
-  { F,   "Clip4D" , opt_general_clip4d , 1.0 ,
+  { F|O, "Clip4D" , opt_general_clip4d , 1.0 ,
     "Fourth coefficient in equation for clipping plane 4" },
-  { F,   "Clip5A" , opt_general_clip5a , 0.0 ,
+  { F|O, "Clip5A" , opt_general_clip5a , 0.0 ,
     "First coefficient in equation for clipping plane 5" },
-  { F,   "Clip5B" , opt_general_clip5b , 0.0 ,
+  { F|O, "Clip5B" , opt_general_clip5b , 0.0 ,
     "Second coefficient in equation for clipping plane 5" },
-  { F,   "Clip5C" , opt_general_clip5c , -1.0 ,
+  { F|O, "Clip5C" , opt_general_clip5c , -1.0 ,
     "Third coefficient in equation for clipping plane 5" },
-  { F,   "Clip5D" , opt_general_clip5d , 1.0 ,
+  { F|O, "Clip5D" , opt_general_clip5d , 1.0 ,
     "Fourth coefficient in equation for clipping plane 5" },
-  { F,   "ClipFactor" , opt_general_clip_factor , 5.0 ,
+  { F|O, "ClipCapping" , opt_general_clip_capping , 0. ,
+    "Fill the section cut by the clipping planes in 3D meshes and views?" },
+  { F|O,   "ClipFactor" , opt_general_clip_factor , 5.0 ,
     "Near and far clipping plane distance factor (decrease value for better "
     "z-buffer resolution)" },
   { F|O, "ClipOnlyDrawIntersectingVolume" ,
@@ -540,24 +561,32 @@ StringXNumber GeneralOptions_Number[] = {
     "Only draw layer of elements that intersect the clipping plane" },
   { F|O, "ClipOnlyVolume" , opt_general_clip_only_volume , 0. ,
     "Only clip volume elements" },
-  { F|S, "ClipPositionX" , opt_general_clip_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the clipping "
-    "planes window" },
-  { F|S, "ClipPositionY" , opt_general_clip_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the clipping "
-    "planes window" },
+  { F|S, "ClipOffsetX" , opt_general_clip_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the clipping "
+    "planes window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ClipPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "ClipOffsetY" , opt_general_clip_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the clipping "
+    "planes window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ClipPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
   { F|O, "ClipWholeElements" , opt_general_clip_whole_elements , 0. ,
     "Clip whole elements" },
   { F|S, "ColorScheme", opt_general_color_scheme , 1. ,
     "Default color scheme for graphics (0: light, 1: default, 2: grayscale, 3: dark)" },
   { F|O, "ConfirmOverwrite" , opt_general_confirm_overwrite, 1. ,
     "Ask confirmation before overwriting files?" },
-  { F|S, "ContextPositionX" , opt_general_context_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the contextual "
-    "windows" },
-  { F|S, "ContextPositionY" , opt_general_context_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the contextual "
-    "windows" },
+  { F|S, "ContextOffsetX" , opt_general_context_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the contextual "
+    "windows, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ContextPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "ContextOffsetY" , opt_general_context_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the contextual "
+    "windows, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ContextPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
 
   { F|S, "DetachedMenu" , opt_general_detached_menu , 0. ,
     "Should the menu window be detached from the graphic window?" },
@@ -574,10 +603,16 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "ExpertMode" , opt_general_expert_mode, 0. ,
     "Enable expert mode (to disable all the messages meant for inexperienced "
     "users)" },
-  { F|S, "ExtraPositionX" , opt_general_extra_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the generic extra window" },
-  { F|S, "ExtraPositionY" , opt_general_extra_position1 , 350. ,
-    "Vertical position (in pixels) of the upper left corner of the generic extra window" },
+  { F|S, "ExtraOffsetX" , opt_general_extra_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the generic "
+    "extra window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ExtraPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "ExtraOffsetY" , opt_general_extra_offset1 , 300. ,
+    "Vertical offset (in pixels) of the upper left corner of the generic "
+    "extra window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ExtraPositionY" , opt_general_window_position_deprecated , 350. ,
+    "[Deprecated]" },
   { F|S, "ExtraHeight" , opt_general_extra_size1 , 100. ,
     "Height (in pixels) of the generic extra window" },
   { F|S, "ExtraWidth" , opt_general_extra_size0 , 100. ,
@@ -585,20 +620,30 @@ StringXNumber GeneralOptions_Number[] = {
 
  { F|O, "FastRedraw" , opt_general_fast_redraw, 0. ,
     "Draw simplified model while rotating, panning and zooming" },
-  { F|S, "FieldPositionX" , opt_general_field_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the field window" },
-  { F|S, "FieldPositionY" , opt_general_field_position1 , 550. ,
-    "Vertical position (in pixels) of the upper left corner of the field window" },
+  { F|S, "FieldOffsetX" , opt_general_field_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the field "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "FieldPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "FieldOffsetY" , opt_general_field_offset1 , 500. ,
+    "Vertical offset (in pixels) of the upper left corner of the field "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "FieldPositionY" , opt_general_window_position_deprecated , 550. ,
+    "[Deprecated]" },
   { F|S, "FieldHeight" , opt_general_field_size1 , 320. ,
     "Height (in pixels) of the field window" },
   { F|S, "FieldWidth" , opt_general_field_size0 , 420. ,
     "Width (in pixels) of the field window" },
-  { F|S, "FileChooserPositionX" , opt_general_file_chooser_position0 , 200. ,
-    "Horizontal position (in pixels) of the upper left corner of the file chooser "
-    "windows" },
-  { F|S, "FileChooserPositionY" , opt_general_file_chooser_position1 , 200. ,
-    "Vertical position (in pixels) of the upper left corner of the file chooser "
-    "windows" },
+  { F|S, "FileChooserOffsetX" , opt_general_file_chooser_offset0 , 150. ,
+    "Horizontal offset (in pixels) of the upper left corner of the file "
+    "chooser windows, relative to the upper left corner of the graphic window" },
+  { F|S|D, "FileChooserPositionX" , opt_general_window_position_deprecated , 200. ,
+    "[Deprecated]" },
+  { F|S, "FileChooserOffsetY" , opt_general_file_chooser_offset1 , 150. ,
+    "Vertical offset (in pixels) of the upper left corner of the file chooser "
+    "windows, relative to the upper left corner of the graphic window" },
+  { F|S|D, "FileChooserPositionY" , opt_general_window_position_deprecated , 200. ,
+    "[Deprecated]" },
   { F|S, "FltkColorScheme" , opt_general_gui_color_scheme , 0. ,
     "FLTK user interface color theme (0: standard, 1:dark)" },
   { F|O, "FltkRefreshRate" , opt_general_gui_refresh_rate , 5. ,
@@ -606,12 +651,13 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "FontSize" , opt_general_fontsize , -1. ,
     "Size of the font in the user interface, in pixels (-1: automatic)" },
 
-  { F|O, "GraphicsFontSize" , opt_general_graphics_fontsize , 15. ,
+  { F|O, "GraphicsFontSize" , opt_general_graphics_fontsize , 16. ,
     "Size of the font in the graphic window, in pixels" },
-  { F|O, "GraphicsFontSizeTitle" , opt_general_graphics_fontsize_title , 18. ,
+  { F|O, "GraphicsFontSizeTitle" , opt_general_graphics_fontsize_title , 19. ,
     "Size of the font in the graphic window for titles, in pixels" },
   { F|S, "GraphicsHeight" , opt_general_graphics_size1 , 600. ,
-    "Height (in pixels) of the graphic window" },
+    "Height (in pixels) of the graphic window, and of the pictures made "
+    "without one (in batch mode, or without the graphical interface)" },
   { F|S, "GraphicsPositionX" , opt_general_graphics_position0 , 50. ,
     "Horizontal position (in pixels) of the upper left corner of the graphic "
     "window" },
@@ -619,14 +665,19 @@ StringXNumber GeneralOptions_Number[] = {
     "Vertical position (in pixels) of the upper left corner of the graphic "
     "window" },
   { F|S, "GraphicsWidth" , opt_general_graphics_size0 , 800. ,
-    "Width (in pixels) of the graphic window" },
+    "Width (in pixels) of the graphic window, and of the pictures made "
+    "without one (in batch mode, or without the graphical interface)" },
 
-  { F|S, "HighOrderToolsPositionX" , opt_general_hot_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the high-order "
-    "tools window" },
-  { F|S, "HighOrderToolsPositionY" , opt_general_hot_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the high-order "
-    "tools window" },
+  { F|S, "HighOrderToolsOffsetX" , opt_general_hot_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the high-order "
+    "tools window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "HighOrderToolsPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "HighOrderToolsOffsetY" , opt_general_hot_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the high-order "
+    "tools window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "HighOrderToolsPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
   { F|O, "HighResolutionGraphics" , opt_general_high_resolution_graphics , 1. ,
     "Use high-resolution OpenGL graphics (e.g. for Macs with retina displays)" },
 
@@ -646,8 +697,9 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "Light0Z" , opt_general_light02 , 1.0 ,
     "Z position of light source 0" },
   { F|O, "Light0W" , opt_general_light03 , 0.0 ,
-    "Divisor of the X, Y and Z coordinates of light source 0 (W=0 means "
-    "infinitely far source)" },
+    "Proximity of light source 0, its W coordinate: 0 for a directional light "
+    "(infinitely far), 1 for a point light at (X, Y, Z), in between for a "
+    "point light at (X, Y, Z) / W (not used by studio shading)" },
   { F|O, "Light1" , opt_general_light1 , 0.,
     "Enable light source 1" },
   { F|O, "Light1X" , opt_general_light10 , 0.5 ,
@@ -657,8 +709,8 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "Light1Z" , opt_general_light12 , 1.0 ,
     "Z position of light source 1" },
   { F|O, "Light1W" , opt_general_light13 , 0.0 ,
-    "Divisor of the X, Y and Z coordinates of light source 1 (W=0 means infinitely "
-    "far source)" },
+    "W coordinate of light source 1: 0 for a directional light, 1 for a point "
+    "light at (X, Y, Z), in between for a point light at (X, Y, Z) / W" },
   { F|O, "Light2" , opt_general_light2 , 0.,
     "Enable light source 2" },
   { F|O, "Light2X" , opt_general_light20 , 0.5 ,
@@ -668,8 +720,8 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "Light2Z" , opt_general_light22 , 1.0 ,
     "Z position of light source 2" },
   { F|O, "Light2W" , opt_general_light23 , 0.0 ,
-    "Divisor of the X, Y and Z coordinates of light source 2 (W=0 means infinitely "
-    "far source)" },
+    "W coordinate of light source 2: 0 for a directional light, 1 for a point "
+    "light at (X, Y, Z), in between for a point light at (X, Y, Z) / W" },
   { F|O, "Light3" , opt_general_light3 , 0.,
     "Enable light source 3" },
   { F|O, "Light3X" , opt_general_light30 , 0.5 ,
@@ -679,8 +731,8 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "Light3Z" , opt_general_light32 , 1.0 ,
     "Z position of light source 3" },
   { F|O, "Light3W" , opt_general_light33 , 0.0 ,
-    "Divisor of the X, Y and Z coordinates of light source 3 (W=0 means infinitely "
-    "far source)" },
+    "W coordinate of light source 3: 0 for a directional light, 1 for a point "
+    "light at (X, Y, Z), in between for a point light at (X, Y, Z) / W" },
   { F|O, "Light4" , opt_general_light4 , 0.,
     "Enable light source 4" },
   { F|O, "Light4X" , opt_general_light40 , 0.5 ,
@@ -690,8 +742,8 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "Light4Z" , opt_general_light42 , 1.0 ,
     "Z position of light source 4" },
   { F|O, "Light4W" , opt_general_light43 , 0.0 ,
-    "Divisor of the X, Y and Z coordinates of light source 4 (W=0 means infinitely "
-    "far source)" },
+    "W coordinate of light source 4: 0 for a directional light, 1 for a point "
+    "light at (X, Y, Z), in between for a point light at (X, Y, Z) / W" },
   { F|O, "Light5" , opt_general_light5 , 0.,
     "Enable light source 5" },
   { F|O, "Light5X" , opt_general_light50 , 0.5 ,
@@ -701,17 +753,22 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "Light5Z" , opt_general_light52 , 1.0 ,
     "Z position of light source 5" },
   { F|O, "Light5W" , opt_general_light53 , 0.0 ,
-    "Divisor of the X, Y and Z coordinates of light source 5 (W=0 means infinitely "
-    "far source)" },
-  { F|O, "LineWidth" , opt_general_line_width , 1.0 ,
+    "W coordinate of light source 5: 0 for a directional light, 1 for a point "
+    "light at (X, Y, Z), in between for a point light at (X, Y, Z) / W" },
+  { F|O, "LineWidth" , opt_general_line_width , 1.5 ,
     "Display width of lines (in pixels)" },
 
-  { F|S, "ManipulatorPositionX" , opt_general_manip_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the manipulator "
+  { F|S, "ManipulatorOffsetX" , opt_general_manip_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the "
+    "manipulator window, relative to the upper left corner of the graphic "
     "window" },
-  { F|S, "ManipulatorPositionY" , opt_general_manip_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the manipulator "
-    "window" },
+  { F|S|D, "ManipulatorPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "ManipulatorOffsetY" , opt_general_manip_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the manipulator "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "ManipulatorPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
   { F,   "MaxX" , opt_general_xmax , 0. ,
     "Maximum model coordinate along the X-axis (read-only)" },
   { F,   "MaxY" , opt_general_ymax , 0. ,
@@ -722,10 +779,16 @@ StringXNumber GeneralOptions_Number[] = {
     "Width (in pixels) of the menu tree" },
   { F|S, "MenuHeight" , opt_general_menu_size1 , 200. ,
     "Height (in pixels) of the (detached) menu tree" },
-  { F|S, "MenuPositionX" , opt_general_menu_position0 , 400. ,
-    "Horizontal position (in pixels) of the (detached) menu tree" },
-  { F|S, "MenuPositionY" , opt_general_menu_position1 , 400. ,
-    "Vertical position (in pixels) of the (detached) menu tree" },
+  { F|S, "MenuOffsetX" , opt_general_menu_offset0 , 350. ,
+    "Horizontal offset (in pixels) of the upper left corner of the (detached) "
+    "menu tree, relative to the upper left corner of the graphic window" },
+  { F|S|D, "MenuPositionX" , opt_general_window_position_deprecated , 400. ,
+    "[Deprecated]" },
+  { F|S, "MenuOffsetY" , opt_general_menu_offset1 , 350. ,
+    "Vertical offset (in pixels) of the upper left corner of the (detached) "
+    "menu tree, relative to the upper left corner of the graphic window" },
+  { F|S|D, "MenuPositionY" , opt_general_window_position_deprecated , 400. ,
+    "[Deprecated]" },
   { F|O, "MessageFontSize" , opt_general_message_fontsize , -1. ,
     "Size of the font in the message window, in pixels (-1: automatic)" },
   { F|S, "MessageHeight" , opt_general_message_size , 300. ,
@@ -736,6 +799,8 @@ StringXNumber GeneralOptions_Number[] = {
     "Minimum model coordinate along the Y-axis (read-only)" },
   { F,   "MinZ" , opt_general_zmin , 0. ,
     "Minimum model coordinate along the Z-axis (read-only)" },
+  { F|O, "MouseHoverHighlight" , opt_general_mouse_hover_highlight , 1. ,
+    "Highlight the entity the mouse is over" },
   { F|O, "MouseHoverMeshes" , opt_general_mouse_hover_meshes , 0. ,
     "Enable mouse hover on meshes" },
   { F|O, "MouseSelection" , opt_general_mouse_selection , 1. ,
@@ -760,24 +825,40 @@ StringXNumber GeneralOptions_Number[] = {
     "Maximum number of threads used by Gmsh when compiled with OpenMP support "
     "(0: use system default, i.e. OMP_NUM_THREADS)"},
 
-  { F|S, "OptionsPositionX" , opt_general_option_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the option "
-    "window" },
-  { F|S, "OptionsPositionY" , opt_general_option_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the option window" },
+  { F|S, "OptionsOffsetX" , opt_general_option_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the option "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "OptionsPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "OptionsOffsetY" , opt_general_option_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the option "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "OptionsPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
+  { F|O, "OrderIndependentTransparency" ,
+    opt_general_order_independent_transparency , 1. ,
+    "Use order-independent (weighted blended) transparency instead of "
+    "back-to-front sorting? (shader pipeline only)" },
   { F|O, "Orthographic" , opt_general_orthographic , 1. ,
     "Orthographic projection mode (0: perspective projection)" },
 
-  { F|S, "PluginPositionX" , opt_general_plugin_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the plugin "
-    "window" },
-  { F|S, "PluginPositionY" , opt_general_plugin_position1 , 550. ,
-    "Vertical position (in pixels) of the upper left corner of the plugin window" },
+  { F|O, "Phlogiston" , opt_general_phlogiston , 1. ,
+    "Phlogiston (0: none)" },
+  { F|S, "PluginOffsetX" , opt_general_plugin_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the plugin "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "PluginPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "PluginOffsetY" , opt_general_plugin_offset1 , 500. ,
+    "Vertical offset (in pixels) of the upper left corner of the plugin "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "PluginPositionY" , opt_general_window_position_deprecated , 550. ,
+    "[Deprecated]" },
   { F|S, "PluginHeight" , opt_general_plugin_size1 , 320. ,
     "Height (in pixels) of the plugin window" },
   { F|S, "PluginWidth" , opt_general_plugin_size0 , 420. ,
     "Width (in pixels) of the plugin window" },
-  { F|O, "PointSize" , opt_general_point_size , 3. ,
+  { F|O, "PointSize" , opt_general_point_size , 6. ,
     "Display size of points (in pixels)" },
   { F|O, "PolygonOffsetAlwaysOn" , opt_general_polygon_offset_always , 0. ,
     "Always apply polygon offset, instead of trying to detect when it is required" },
@@ -795,6 +876,10 @@ StringXNumber GeneralOptions_Number[] = {
 
   { F|O, "QuadricSubdivisions" , opt_general_quadric_subdivisions, 6. ,
     "Number of subdivisions used to draw points or lines as spheres or cylinders" },
+  { F|O, "GraphicsCacheSize" , opt_general_graphics_cache_size, 0. ,
+    "Maximum memory (in MB) used by each of the caches kept between frames: "
+    "glyphs (spheres, arrows, ...; fixed function pipeline only) and strings "
+    "(0: automatic)" },
 
   { F,   "RotationX" , opt_general_rotation0 , 0.0 ,
     "First Euler angle (used if Trackball=0)" },
@@ -805,11 +890,11 @@ StringXNumber GeneralOptions_Number[] = {
   { F|O, "RotationCenterGravity" , opt_general_rotation_center_cg , 1. ,
     "Rotate around the (pseudo) center of mass instead of (RotationCenterX, "
     "RotationCenterY, RotationCenterZ)" },
-  { F,   "RotationCenterX" , opt_general_rotation_center0 , 0.0 ,
+  { F|O, "RotationCenterX" , opt_general_rotation_center0 , 0.0 ,
     "X coordinate of the center of rotation" },
-  { F,   "RotationCenterY" , opt_general_rotation_center1 , 0.0 ,
+  { F|O, "RotationCenterY" , opt_general_rotation_center1 , 0.0 ,
     "Y coordinate of the center of rotation" },
-  { F,   "RotationCenterZ" , opt_general_rotation_center2 , 0.0 ,
+  { F|O, "RotationCenterZ" , opt_general_rotation_center2 , 0.0 ,
     "Z coordinate of the center of rotation" },
 
   { F|S, "SaveOptions" , opt_general_options_save, 0. ,
@@ -824,6 +909,12 @@ StringXNumber GeneralOptions_Number[] = {
     "Y-axis scale factor" },
   { F,   "ScaleZ" , opt_general_scale2 , 1.0 ,
     "Z-axis scale factor" },
+  { F|O, "Shaders" , opt_general_shaders , 1. ,
+    "Use the OpenGL shader pipeline instead of the fixed function one?" },
+  { F|O, "Shading" , opt_general_shading , 0. ,
+    "Shading model (0: classic; 1, 2 or 3: studio, with soft lighting and a "
+    "shadow cast by light 0 on a floor normal to the X, Y or Z axis; shader "
+    "pipeline only)" },
   { F|O, "Shininess" , opt_general_shine , 0.4 ,
     "Material shininess" },
   { F|O, "ShininessExponent" , opt_general_shine_exponent , 40. ,
@@ -844,21 +935,43 @@ StringXNumber GeneralOptions_Number[] = {
     " centered)" },
   { F|O, "SmallAxesSize" , opt_general_small_axes_size , 30. ,
     "Size (in pixels) of small axes" },
-  { F|S, "StatisticsPositionX" , opt_general_statistics_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the statistic "
-    "window" },
-  { F|S, "StatisticsPositionY" , opt_general_statistics_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the statistic"
-    " window" },
+  { F|S, "StatisticsOffsetX" , opt_general_statistics_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the statistic "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "StatisticsPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "StatisticsOffsetY" , opt_general_statistics_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the statistic "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "StatisticsPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
   { F|O, "Stereo" , opt_general_stereo_mode , 0. ,
     "Use stereo rendering" },
+  { F|O, "StudioFloorOffset" , opt_general_studio_floor_offset , 0. ,
+    "Offset of the floor in studio shading from the bottom of the model, "
+    "along the floor's normal, relative to the largest dimension of the "
+    "bounding box" },
+  { F|O, "StudioFloorSize" , opt_general_studio_floor_size , 6. ,
+    "Largest half-size of the floor in studio shading, relative to the largest "
+    "dimension of the bounding box: the floor grows to catch the shadow of a "
+    "low light up to this" },
+  { F|O, "StudioLightSpread" , opt_general_studio_light_spread , 12. ,
+    "Angular radius (in degrees) of the light in studio shading, which sets "
+    "the softness of its shadow" },
+  { F|O, "StudioSamples" , opt_general_studio_samples , 128. ,
+    "Number of frames accumulated in studio shading while the view is still, "
+    "for soft shadows, ambient occlusion and antialiasing" },
+  { F|O, "StudioShadowStrength" , opt_general_studio_shadow_strength , 1. ,
+    "Darkness of the shadows in studio shading, on the floor and on the model "
+    "(0: no shadow; 1: default; 2: twice as dark)" },
   { F|S, "SystemMenuBar" , opt_general_system_menu_bar , 1. ,
     "Use the system menu bar on macOS?" },
 
   { F|O, "Terminal" , opt_general_terminal , 0. ,
     "Should information be printed on the terminal (if available)?" },
   { F|O, "Tooltips" , opt_general_tooltips , 1. ,
-    "Show tooltips in the user interface" },
+    "Show tooltips in the user interface, and what the cursor is over in a "
+    "box in the graphic window rather than in the status bar" },
   { F|O, "Trackball" , opt_general_trackball , 1. ,
     "Use trackball rotation mode" },
   { F|O, "TrackballHyperbolicSheet" , opt_general_trackball_hyperbolic_sheet , 1. ,
@@ -884,12 +997,18 @@ StringXNumber GeneralOptions_Number[] = {
     "Level of information printed on the terminal and the message console "
     "(0: silent except for fatal errors, 1: +errors, 2: +warnings, 3: +direct, "
     "4: +information, 5: +status, 99: +debug)" },
-  { F|S, "VisibilityPositionX" , opt_general_visibility_position0 , 650. ,
-    "Horizontal position (in pixels) of the upper left corner of the visibility "
-    "window" },
-  { F|S, "VisibilityPositionY" , opt_general_visibility_position1 , 150. ,
-    "Vertical position (in pixels) of the upper left corner of the visibility "
-    "window" },
+  { F|O, "VertexBufferObjects" , opt_general_vertex_buffer_objects , 1. ,
+    "Store vertex arrays in OpenGL buffer objects?" },
+  { F|S, "VisibilityOffsetX" , opt_general_visibility_offset0 , 600. ,
+    "Horizontal offset (in pixels) of the upper left corner of the visibility "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "VisibilityPositionX" , opt_general_window_position_deprecated , 650. ,
+    "[Deprecated]" },
+  { F|S, "VisibilityOffsetY" , opt_general_visibility_offset1 , 100. ,
+    "Vertical offset (in pixels) of the upper left corner of the visibility "
+    "window, relative to the upper left corner of the graphic window" },
+  { F|S|D, "VisibilityPositionY" , opt_general_window_position_deprecated , 150. ,
+    "[Deprecated]" },
 
   { F|O, "ZoomFactor" , opt_general_zoom_factor , 4.0 ,
     "Middle mouse button zoom acceleration factor" },
@@ -903,7 +1022,7 @@ StringXNumber GeometryOptions_Number[] = {
     "geometry kernel? If Geometry.AutoCoherence = 2, also remove degenerate "
     "entities. The option has no effect with the OpenCASCADE kernel"},
 
-  { F,   "Clip" , opt_geometry_clip , 0.,
+  { F|O,   "Clip" , opt_geometry_clip , 0.,
     "Enable clipping planes? (Plane[i]=2^i, i=0,...,5)" },
   { F|O, "CopyMeshingMethod" , opt_geometry_copy_meshing_method, 0. ,
     "Copy meshing method (unstructured or transfinite) when duplicating geometrical "
@@ -1001,10 +1120,10 @@ StringXNumber GeometryOptions_Number[] = {
     "Fix degenerated edges/faces when importing STEP, IGES and BRep models with the "
     "OpenCASCADE kernel" },
   { F|O, "OCCFixSmallEdges" , opt_geometry_occ_fix_small_edges , 0. ,
-    "Fix small edges when importing STEP, IGES and BRep models with the "
+    "Fix small edges when importing STEP, IGES and BREP models with the "
     "OpenCASCADE kernel" },
   { F|O, "OCCFixSmallFaces" , opt_geometry_occ_fix_small_faces , 0. ,
-    "Fix small faces when importing STEP, IGES and BRep models with the "
+    "Fix small faces when importing STEP, IGES and BREP models with the "
     "OpenCASCADE kernel" },
   { F|O, "OCCExportOnlyVisible" , opt_geometry_occ_export_only_visible , 0. ,
     "Only consider visible shapes when exporting STEP or BREP models with the "
@@ -1012,8 +1131,12 @@ StringXNumber GeometryOptions_Number[] = {
   { F|O, "OCCImportLabels" , opt_geometry_occ_import_labels , 1. ,
     "Import labels and colors when importing STEP models with the OpenCASCADE "
     "kernel (0: no, 1: yes, 2: use slow workaround for bad shape locations)" },
+  { F|O, "OCCWriteParametricCurves" , opt_geometry_occ_write_parametric_curves , 1. ,
+    "Write parametric curves in STEP exports with the OpenCASCADE kernel" },
+  { F|O, "OCCWriteSTEPNonManifold" , opt_geometry_occ_write_step_non_manifold , 1. ,
+    "Enable non-manifold STEP exports with the OpenCASCADE kernel" },
   { F|O, "OCCMakeSolids" , opt_geometry_occ_make_solids , 0. ,
-    "Fix shells and make solids when importing STEP, IGES and BRep models with the "
+    "Fix shells and make solids when importing STEP, IGES and BREP models with the "
     "OpenCASCADE kernel" },
   { F|O, "OCCParallel" , opt_geometry_occ_parallel , 0. ,
     "Use multi-threaded OpenCASCADE boolean operators" },
@@ -1021,15 +1144,19 @@ StringXNumber GeometryOptions_Number[] = {
     "Use fast (i.e. without recursive checks on boundaries) unbinding of entities "
     "in geometrical transformations (1), as well as in boolean operations (2)" },
   { F|O, "OCCScaling" , opt_geometry_occ_scaling , 1. ,
-    "Scale STEP, IGES and BRep models by the given factor when importing them with the "
+    "Scale STEP, IGES and BREP models by the given factor when importing them with the "
     "OpenCASCADE kernel" },
   { F|O, "OCCSewFaces" , opt_geometry_occ_sew_faces , 0. ,
-    "Sew faces when importing STEP, IGES and BRep models with the OpenCASCADE kernel" },
+    "Sew faces when importing STEP, IGES and BREP models with the OpenCASCADE kernel" },
   { F|O, "OCCThruSectionsDegree" , opt_geometry_occ_thrusections_degree , -1. ,
     "Maximum degree of surfaces generated by thrusections with the OpenCASCADE kernel, "
     "if not explicitly specified (default OCC value if negative)" },
   { F|O|D, "OCCUnionUnify" , opt_geometry_occ_boolean_simplify , 1. ,
     "[Deprecated]" },
+  { F|O, "OCCFastProjection" , opt_geometry_occ_fast_projection , 0. ,
+    "Start point projections in the OpenCASCADE kernel from the initial guess "
+    "provided by the caller (much faster, but only correct if the caller checks "
+    "the result)" },
   { F|O, "OCCUseGenericClosestPoint" , opt_geometry_occ_use_generic_closest_point , 0. ,
     "Use generic algrithm to compute point projections in the OpenCASCADE kernel "
     "(less robust, but significally faster in some configurations)" },
@@ -1046,6 +1173,11 @@ StringXNumber GeometryOptions_Number[] = {
   { F|O, "OldNewReg" , opt_geometry_old_newreg , 1. ,
     "Use old newreg definition for geometrical transformations (compatibility "
     "option for old Gmsh geometries)" },
+  { F|O, "Opacity" , opt_geometry_opacity , 1. ,
+    "Opacity factor applied to all geometry colors (1: opaque, 0: fully "
+    "transparent)" },
+  { F|O, "OpacityMode" , opt_geometry_opacity_mode , 0. ,
+    "Apply Geometry.Opacity to (0: filled surfaces only; 1: everything)" },
   { F|O, "OrientedPhysicals" , opt_geometry_oriented_physicals, 1. ,
     "Use sign of elementary entity in physical definition as orientation indicator" },
 
@@ -1055,9 +1187,9 @@ StringXNumber GeometryOptions_Number[] = {
     "Display points labels?" },
   { F|O|D, "PointNumbers" , opt_geometry_point_labels , 0. ,
     "[Deprecated]" },
-  { F|O, "PointSelectSize" , opt_geometry_point_sel_size , 6. ,
+  { F|O, "PointSelectSize" , opt_geometry_point_sel_size , 10. ,
     "Display size of selected points (in pixels)" },
-  { F|O, "PointSize" , opt_geometry_point_size , 4. ,
+  { F|O, "PointSize" , opt_geometry_point_size , 8. ,
     "Display size of points (in pixels)" },
   { F|O, "PointType" , opt_geometry_point_type , 0. ,
     "Display points as solid color dots (0) or 3D spheres (1)" },
@@ -1132,10 +1264,15 @@ StringXNumber MeshOptions_Number[] = {
     "9: Packing of Parallelograms, 11: Quasi-structured Quad)" },
   { F|O, "Algorithm3D" , opt_mesh_algo3d , ALGO_3D_DELAUNAY ,
     "3D mesh algorithm (1: Delaunay, 3: Initial mesh only, 4: Frontal, "
-    "7: MMG3D, 9: R-tree, 10: HXT)" },
+    "7: MMG3D, 9: R-tree, 10: HXT, 11: Parallel Delaunay)" },
   { F|O, "AlgorithmSwitchOnFailure" , opt_mesh_algo_switch_on_failure , 1 ,
     "Switch meshing algorithm on failure? (Currently only for 2D Delaunay-based "
     "algorithms, switching to MeshAdapt)"},
+  { F|O, "MMG3DCombineDomains" , opt_mesh_mmg3d_combine_domains , 1 ,
+    "When Algorithm3D=7 (MMG3D) is used on connected volumes that share an "
+    "internal interface, run a single combined MMG3D call over the whole group "
+    "with per-region references instead of one independent call per region "
+    "(0: independent per-region calls; 1: single combined call)" },
   { F|O, "AngleSmoothNormals" , opt_mesh_angle_smooth_normals , 30.0 ,
     "Threshold angle below which normals are not smoothed" },
   { F|O, "AngleToleranceFacetOverlap" , opt_mesh_angle_tolerance_facet_overlap , 0.1,
@@ -1167,7 +1304,7 @@ StringXNumber MeshOptions_Number[] = {
   { F|O, "CgnsImportIgnoreSolution" , opt_mesh_cgns_import_ignore_solution , 0. ,
    "Ignore solution when reading a CGNS file" },
   { F|O, "CgnsConstructTopology" , opt_mesh_cgns_construct_topology , 0. ,
-   "Reconstruct the model topology (BREP) after reading a CGNS file" },
+   "Reconstruct the model topology (BRep) after reading a CGNS file" },
   { F|O, "CgnsExportCPEX0045" , opt_mesh_cgns_export_cpex0045 , 0. ,
    "Use the CPEX0045 convention when exporting a high-order mesh to CGNS" },
   { F|O, "CgnsExportStructured" , opt_mesh_cgns_export_structured , 0. ,
@@ -1189,7 +1326,7 @@ StringXNumber MeshOptions_Number[] = {
     "[Deprecated]"},
   { F|O, "CheckSurfaceNormalValidity" , opt_mesh_check_surface_normal_validity , 1. ,
     "Check surface mesh validity according to the geometry normal"},
-  { F,   "Clip" , opt_mesh_clip , 0.,
+  { F|O,   "Clip" , opt_mesh_clip , 0.,
     "Enable clipping planes? (Plane[i]=2^i, i=0,...,5)" },
   { F|O, "ColorCarousel" , opt_mesh_color_carousel , 1. ,
     "Mesh coloring (0: by element type, 1: by elementary entity, 2: by physical "
@@ -1206,9 +1343,19 @@ StringXNumber MeshOptions_Number[] = {
     "CPU time (in seconds) for the generation of the current mesh (read-only)" },
   { F|O, "CreateTopologyMsh2" , opt_mesh_create_topology_msh2, 0. ,
     "Attempt to (re)create the model topology when reading MSH2 files" },
+  { F|O, "CreateEdges" , opt_mesh_create_edges, 0. ,
+    "Create mesh edges before saving MSH files" },
+  { F|O, "CreateFaces" , opt_mesh_create_faces, 0. ,
+    "Create mesh edges before saving MSH files" },
 
-  { F|O, "DrawSkinOnly" , opt_mesh_draw_skin_only , 0. ,
-    "Draw only the skin of 3D meshes?" },
+  { F|O, "DrawSkinEdgesOnly" , opt_mesh_draw_skin_edges_only , 0. ,
+    "Draw only the edges of the boundary faces of 3D meshes?" },
+  { F|O, "DrawSkinOnly" , opt_mesh_draw_skin_only , 1. ,
+    "Draw only the boundary faces of 3D meshes, entity by entity (1), or with "
+    "the partitions of an entity together, without the faces between them (2)" },
+  { F|O, "DrawUniqueEdges" , opt_mesh_draw_unique_edges , 1. ,
+    "Draw each mesh edge once instead of once per element? (only if "
+    "Mesh.Explode is 1)" },
   { F|O, "Dual" , opt_mesh_dual , 0. ,
     "Display the dual mesh obtained by barycentric subdivision" },
 
@@ -1222,13 +1369,26 @@ StringXNumber MeshOptions_Number[] = {
     "First tag (>= 1) of mesh elements when generating or renumbering a mesh" },
   { F|O, "FirstNodeTag" , opt_mesh_first_node_tag , 1. ,
     "First tag (>= 1) of mesh nodes when generating or renumbering a mesh" },
+  { F|O, "FlatOptimize3D" , opt_mesh_flat_optimize_3d , 1. ,
+    "Use the flat-array kernel to optimize 3D meshes (set to 0 to use the "
+    "original object-based kernel, which performs the same operations and "
+    "gives meshes of the same quality)" },
+  { F|O, "FlatRefine2D" , opt_mesh_flat_refine_2d , 1. ,
+    "Kernel used for 2D Delaunay point insertion (0: original object-based "
+    "kernel; 1: flat-array kernel, which produces the same meshes; 2: "
+    "flat-array kernel with faster floating-point shortcuts on planar faces "
+    "and isotropic metrics, which give equivalent but not identical meshes)" },
+  { F|O, "FlatRefine3D" , opt_mesh_flat_refine_3d , 1. ,
+    "Use the flat-array kernel for 3D Delaunay point insertion (set to 0 to "
+    "use the original object-based kernel, which produces the same meshes)" },
   { F|O, "FlexibleTransfinite" , opt_mesh_flexible_transfinite , 0 ,
     "Allow transfinite constraints to be modified for recombination (e.g. Blossom) or "
     "by global mesh size factor" },
   { F|O, "Format" , opt_mesh_file_format , FORMAT_AUTO ,
-    "Mesh output format (1: msh, 2: unv, 10: auto, 16: vtk, 19: vrml, 21: mail, "
-    "26: pos stat, 27: stl, 28: p3d, 30: mesh, 31: bdf, 32: cgns, 33: med, 34: diff, "
-    "38: ir3, 39: inp, 40: ply2, 41: celum, 42: su2, 47: tochnog, 49: neu, 50: matlab)" },
+    "Mesh output format (1: msh, 2: unv, 3: vtu, 10: auto, 16: vtk, 19: vrml, "
+    "21: mail, 26: pos stat, 27: stl, 28: p3d, 30: mesh, 31: bdf, 32: cgns, "
+    "33: med, 34: diff, 38: ir3, 39: inp, 40: ply2, 41: celum, 42: su2, "
+    "47: tochnog, 49: neu, 50: matlab, 51: key, 55: rad, 57: obj)"},
   { F|O, "Hexahedra" , opt_mesh_hexahedra , 1. ,
     "Display mesh hexahedra?" },
 
@@ -1283,6 +1443,10 @@ StringXNumber MeshOptions_Number[] = {
   { F|O, "IgnoreUnknownSections" , opt_mesh_ignore_unknown_sections, 0. ,
     "Skip unknown sections when reading meshes in the MSH4 format (otherwise the "
     "contents of these sections are stored as model attributes)"},
+  { F|O, "IgnoreEdges" , opt_mesh_ignore_edges, 0. ,
+    "Skip the edges section when reading meshes in the MSH4 format" },
+  { F|O, "IgnoreFaces" , opt_mesh_ignore_faces, 0. ,
+    "Skip the faces section when reading meshes in the MSH4 format" },
   { F|O, "IgnoreParametrization" , opt_mesh_ignore_parametrization, 0. ,
     "Skip parametrization section when reading meshes in the MSH4 format" },
   { F|O, "IgnorePeriodicity" , opt_mesh_ignore_periodicity , 1. ,
@@ -1350,8 +1514,9 @@ StringXNumber MeshOptions_Number[] = {
   { F|O, "MeshSizeFromParametricPoints" , opt_mesh_lc_from_parametric_points , 0. ,
     "Compute mesh element sizes from values given at geometry points defining "
     "parametric curves"},
-  { F|O, "MetisAlgorithm" , opt_mesh_partition_metis_algorithm, 1. ,
-    "METIS partitioning algorithm 'ptype' (1: Recursive, 2: K-way)" },
+  { F|O, "MetisAlgorithm" , opt_mesh_partition_metis_algorithm, 2. ,
+    "METIS partitioning algorithm 'ptype' (1: Recursive, 2: K-way, 3: Multithreaded "
+    "k-way with mt-metis, if available)" },
   { F|O, "MetisEdgeMatching" , opt_mesh_partition_metis_edge_matching, 2. ,
     "METIS edge matching type 'ctype' (1: Random, 2: Sorted Heavy-Edge)" },
   { F|O, "MetisMaxLoadImbalance" , opt_mesh_partition_metis_max_load_imbalance, -1. ,
@@ -1386,7 +1551,7 @@ StringXNumber MeshOptions_Number[] = {
     "[Deprecated]"},
   { F|O|D, "MinimumElementsPerTwoPi" , opt_mesh_lc_from_curvature, 0. ,
     "[Deprecated]" },
-  { F|O, "MshFileVersion" , opt_mesh_msh_file_version , 4.1 ,
+  { F|O, "MshFileVersion" , opt_mesh_msh_file_version , 4.2 ,
     "Version of the MSH file format to use" },
   { F|O, "MedFileMinorVersion" , opt_mesh_med_file_minor_version , -1. ,
     "Minor version of the MED file format to use (-1: use minor version of the MED library)" },
@@ -1395,6 +1560,12 @@ StringXNumber MeshOptions_Number[] = {
   { F|O, "MedSingleModel" , opt_mesh_med_single_model , 0. ,
     "Import MED meshes in the current model, even if several MED mesh names exist" },
 
+  { F, "NbEdges" , opt_mesh_nb_edges , 0. ,
+    "Number of edges of the current mesh, when they have been created or read "
+    "(Mesh.CreateEdges) (read-only)" },
+  { F, "NbFaces" , opt_mesh_nb_faces , 0. ,
+    "Number of faces of the current mesh, when they have been created or read "
+    "(Mesh.CreateFaces) (read-only)" },
   { F, "NbHexahedra" , opt_mesh_nb_hexahedra , 0. ,
     "Number of hexahedra in the current mesh (read-only)" },
   { F, "NbNodes" , opt_mesh_nb_nodes , 0. ,
@@ -1403,6 +1574,10 @@ StringXNumber MeshOptions_Number[] = {
     "Number of partitions" },
   { F, "NbPrisms" , opt_mesh_nb_prisms , 0. ,
     "Number of prisms in the current mesh (read-only)" },
+  { F, "NbPolygons" , opt_mesh_nb_polygons , 0. ,
+    "Number of polygons in the current mesh (read-only)" },
+  { F, "NbPolyhedra" , opt_mesh_nb_polyhedra , 0. ,
+    "Number of polyhedra in the current mesh (read-only)" },
   { F, "NbPyramids" , opt_mesh_nb_pyramids , 0. ,
     "Number of pyramids in the current mesh (read-only)" },
   { F, "NbTrihedra" , opt_mesh_nb_trihedra , 0. ,
@@ -1431,6 +1606,11 @@ StringXNumber MeshOptions_Number[] = {
 
   { F|O, "OldInitialDelaunay2D" , opt_mesh_old_initial_delaunay_2d , 0. ,
     "Use old initial 2D Delaunay code" },
+  { F|O, "Opacity" , opt_mesh_opacity , 1. ,
+    "Opacity factor applied to all mesh colors (1: opaque, 0: fully "
+    "transparent)" },
+  { F|O, "OpacityMode" , opt_mesh_opacity_mode , 1. ,
+    "Apply Mesh.Opacity to (0: filled surfaces only; 1: everything)" },
   { F|O, "Optimize" , opt_mesh_optimize , 1. ,
     "Optimize the mesh to improve the quality of tetrahedral elements" },
   { F|O, "OptimizeThreshold" , opt_mesh_optimize_threshold , 0.3 ,
@@ -1440,6 +1620,17 @@ StringXNumber MeshOptions_Number[] = {
     "elements" },
   { F|O, "OptimizePyramids" , opt_mesh_optimize_pyramids , 0 ,
     "Optimize pyramids in hybrid 3D meshes (0: smoother; 1: untangler)" },
+  { F|O, "OptimizeReconnectionPoints" , opt_mesh_optimize_reconnection_points ,
+    16 , /* HXT: 32 */ "Maximum number of nodes of the cavity that the parallel "
+    "3D optimizer reconnects around a tetrahedron it could not improve otherwise "
+    "(5 to 32; below 5: no reconnection)" },
+  { F|O, "OptimizeReconnectionSearch" , opt_mesh_optimize_reconnection_search ,
+    200 , /* HXT: 500 */ "Maximum number of tetrahedra placed by the search for "
+    "a better reconnection of a cavity" },
+  { F|O, "OptimizeReconnectionThreshold" , opt_mesh_optimize_reconnection_threshold ,
+    0.5 , /* HXT: 1 */ "Reconnect the tetrahedra that the parallel 3D optimizer "
+    "could not improve otherwise and whose quality is below this fraction of "
+    "Mesh.OptimizeThreshold (0: no reconnection; 1: all of them)" },
 
   { F|O, "PartitionHexWeight" , opt_mesh_partition_hex_weight , -1 ,
     "Weight of hexahedral element for METIS load balancing (-1: automatic)" },
@@ -1466,6 +1657,9 @@ StringXNumber MeshOptions_Number[] = {
     "elements connected to neighboring partitions by at least one node." },
   { F|O, "PartitionSplitMeshFiles" , opt_mesh_partition_split_mesh_files , 0 ,
     "Write one file for each mesh partition" },
+  { F|O, "PartitionSplitLocalBrep" , opt_mesh_partition_split_local_brep , 0. ,
+    "Only export the subset of the topology (BRep) that is relevant when "
+    "splitting mesh files per partition" },
   { F|O, "PartitionTopologyFile" , opt_mesh_partition_save_topology_file , 0 ,
     "Write a .pro file with the partition topology" },
   { F|O, "PartitionOldStyleMsh2" , opt_mesh_partition_old_style_msh2 , 1 ,
@@ -1603,6 +1797,11 @@ StringXNumber MeshOptions_Number[] = {
     "in the model) in MSH4 files" },
   { F|O, "SaveTopology" , opt_mesh_save_topology, 0. ,
     "Save model topology in MSH2 output files (this is always saved in MSH3 and above)" },
+  { F,   "SaveViews" , opt_mesh_save_views , 0. ,
+    "Save post-processing views with the mesh in MSH, MED and VTU files (0: "
+    "none, 1: visible views, 2: all views): the views based on the model with "
+    "its mesh, and in MSH and VTU the list-based views (in `name_views.msh' "
+    "or `name_views.vtu' if the model has a mesh)" },
   { F|O, "ScalingFactor" , opt_mesh_scaling_factor , 1.0 ,
     "Global scaling factor applied to the saved mesh" },
   { F|O, "SecondOrderIncomplete" , opt_mesh_second_order_incomplete , 0. ,
@@ -1666,12 +1865,16 @@ StringXNumber MeshOptions_Number[] = {
     "Display mesh triangles?" },
   { F|O, "Trihedra" , opt_mesh_trihedra , 1. ,
     "Display mesh trihedra?" },
+  { F|O, "Polygons" , opt_mesh_polygons , 1. ,
+    "Display mesh polygons?" },
+  { F|O, "Polyhedra" , opt_mesh_polyhedra , 1. ,
+    "Display mesh polyhedra?" },
   { F|O, "TransfiniteTri" , opt_mesh_transfinite_tri , 0 ,
     "Use alternative transfinite arrangement when meshing 3-sided surfaces" },
 
   { F|O, "UnvStrictFormat" , opt_mesh_unv_strict_format , 1 ,
-    "Use strict format specification for UNV files, with 'D' for exponents (instead of "
-    "'E' as used by some tools)" },
+    "Use strict format specification for UNV files, with 'D' for exponents "
+    "(instead of 'E' as used by some tools)" },
 
   { F|O, "VolumeEdges" , opt_mesh_volume_edges , 1. ,
     "Display edges of volume mesh?" },
@@ -1753,9 +1956,8 @@ StringXNumber PostProcessingOptions_Number[] = {
   { F|O, "ForceNodeData" , opt_post_force_node_data , 0. ,
     "Try to force saving datasets as NodeData" },
   { F|O, "Format" , opt_post_file_format , 10. ,
-    "Default file format for post-processing views (0: ASCII view, 1: binary "
-    "view, 2: parsed view, 3: STL triangulation, 4: raw text, 5: Gmsh mesh, 6: MED file, "
-    "10: automatic)" },
+    "Default file format for post-processing views (0: pos ASCII, 1: pos binary, "
+    "2: pos parsed, 3: stl, 4: txt, 5: msh, 6: med, 7: x3d, 8: vtu, 10: auto)" },
 
   { F, "GraphPointX" , opt_post_double_clicked_graph_point_x , 0. ,
     "Synonym for `DoubleClickedGraphPointX'" },
@@ -1775,6 +1977,11 @@ StringXNumber PostProcessingOptions_Number[] = {
   { F|O, "Plugins" , opt_post_plugins , 1. ,
     "Enable default post-processing plugins?" },
 
+  { F|O, "SaveAdapted" , opt_post_save_adapted , 0. ,
+    "Save the views of high order refined, as adapted views are drawn (with "
+    "View.MaxRecursionLevel and View.TargetError), for readers that cannot "
+    "handle high order elements; each time step then has a mesh of its own, "
+    "and a file of its own, name_0000.ext, name_0001.ext..." },
   { F|O, "SaveInterpolationMatrices" , opt_post_save_interpolation_matrices , 1. ,
     "Save the interpolation matrices when exporting model-based data" },
   { F|O, "SaveMesh" , opt_post_save_mesh , 1. ,
@@ -1788,6 +1995,12 @@ StringXNumber PostProcessingOptions_Number[] = {
 StringXNumber ViewOptions_Number[] = {
   { F|O, "AbscissaRangeType" , opt_view_abscissa_range_type , 1 ,
     "Ascissa scale range type (1: default, 2: custom)" },
+  { F|O, "AdaptSkinOnly" , opt_view_adapt_skin_only , 2. ,
+    "Refine only the skin of the volumes of an adaptive view when only the skin "
+    "is drawn (DrawSkinOnly), and apart the volumes the clipping planes cut "
+    "when they are capped or drawn whole: what reads the refined view as a "
+    "whole (plugins, probes, the API) refines it all (2: the same, with the "
+    "partitions of an entity together, without the faces between them)" },
   { F|O, "AdaptVisualizationGrid" , opt_view_adapt_visualization_grid , 0. ,
     "Use adaptive visualization grid (for high-order elements)?" },
   { F|O, "AngleSmoothNormals" , opt_view_angle_smooth_normals , 30.0 ,
@@ -1818,12 +2031,21 @@ StringXNumber ViewOptions_Number[] = {
     "Minimum Y-axis coordinate" },
   { F|O, "AxesMinZ" , opt_view_axes_zmin , 0. ,
     "Minimum Z-axis coordinate" },
-  { F|O, "AxesTicsX" , opt_view_axes_tics0 , 5. ,
-    "Number of tics on the X-axis" },
-  { F|O, "AxesTicsY" , opt_view_axes_tics1 , 5. ,
-    "Number of tics on the Y-axis" },
-  { F|O, "AxesTicsZ" , opt_view_axes_tics2 , 5. ,
-    "Number of tics on the Z-axis" },
+  { F|O, "AxesTicksX" , opt_view_axes_ticks0 , 5. ,
+    "Number of ticks on the X-axis (about that many, when the labels "
+    "are placed at round values)" },
+  { F|O, "AxesTicksY" , opt_view_axes_ticks1 , 5. ,
+    "Number of ticks on the Y-axis (about that many, when the labels "
+    "are placed at round values)" },
+  { F|O, "AxesTicksZ" , opt_view_axes_ticks2 , 5. ,
+    "Number of ticks on the Z-axis (about that many, when the labels "
+    "are placed at round values)" },
+  { F|O|D, "AxesTicsX" , opt_view_axes_ticks0 , 5. ,
+    "[Deprecated]" },
+  { F|O|D, "AxesTicsY" , opt_view_axes_ticks1 , 5. ,
+    "[Deprecated]" },
+  { F|O|D, "AxesTicsZ" , opt_view_axes_ticks2 , 5. ,
+    "[Deprecated]" },
 
   { F|O, "Boundary" , opt_view_boundary , 0. ,
     "Draw the `N minus b'-dimensional boundary of the element (N: element "
@@ -1831,12 +2053,12 @@ StringXNumber ViewOptions_Number[] = {
 
   { F|O, "CenterGlyphs" , opt_view_center_glyphs , 0,
     "Center glyphs (arrows, numbers, etc.)? (0: left, 1: centered, 2: right)" },
-  { F,   "Clip" , opt_view_clip , 0.,
+  { F|O,   "Clip" , opt_view_clip , 0.,
     "Enable clipping planes? (Plane[i]=2^i, i=0,...,5)" },
   { F|O, "Closed" , opt_view_closed , 0,
     "Close the subtree containing this view" },
-  { F|O, "ColormapAlpha" , opt_view_colormap_alpha , 1.0 ,
-    "Colormap alpha channel value (used only if != 1)" },
+  { F|O|D, "ColormapAlpha" , opt_view_opacity , 1.0 ,
+    "[Deprecated]" },
   { F|O, "ColormapAlphaPower" , opt_view_colormap_alpha_power , 0.0 ,
     "Colormap alpha channel power" },
   { F|O, "ColormapBeta" , opt_view_colormap_beta , 0.0 ,
@@ -1852,7 +2074,7 @@ StringXNumber ViewOptions_Number[] = {
     "5: emc2000, 6: incadescent, 7: hot, 8: pink, 9: grayscale, 10: french, "
     "11: hsv, 12: spectrum, 13: bone, 14: spring, 15: summer, 16: autumm, "
     "17: winter, 18: cool, 19: copper, 20: magma, 21: inferno, 22: plasma, "
-    "23: viridis, 24: turbo)"},
+    "23: viridis, 24: turbo, 25: cool to warm, 26: fast)"},
   { F|O, "ColormapRotation" , opt_view_colormap_rotation , 0. ,
     "Incremental colormap rotation" },
   { F|O, "ColormapSwap" , opt_view_colormap_swap , 0. ,
@@ -1898,12 +2120,19 @@ StringXNumber ViewOptions_Number[] = {
     "Display post-processing pyramids?" },
   { F|O, "DrawTrihedra" , opt_view_draw_trihedra , 1. ,
     "Display post-processing trihedra?" },
+  { F|O, "DrawPolygons" , opt_view_draw_polygons , 1. ,
+    "Display post-processing polygons?" },
+  { F|O, "DrawPolyhedra" , opt_view_draw_polyhedra , 1. ,
+    "Display post-processing polyhedra?" },
   { F|O, "DrawQuadrangles" , opt_view_draw_quadrangles , 1. ,
     "Display post-processing quadrangles?" },
   { F|O, "DrawScalars" , opt_view_draw_scalars , 1. ,
     "Display scalar values?" },
-  { F|O, "DrawSkinOnly" , opt_view_draw_skin_only , 0. ,
-    "Draw only the skin of 3D scalar views?" },
+  { F|O, "DrawSkinEdgesOnly" , opt_view_draw_skin_edges_only , 0. ,
+    "Draw only the outlines of the boundary faces of 3D views?" },
+  { F|O, "DrawSkinOnly" , opt_view_draw_skin_only , 1. ,
+    "Draw only the boundary faces of 3D views, entity by entity (1), or with "
+    "the partitions of an entity together, without the faces between them (2)" },
   { F|O, "DrawStrings" , opt_view_draw_strings , 1. ,
     "Display post-processing annotation strings?" },
   { F|O, "DrawTensors" , opt_view_draw_tensors , 1. ,
@@ -1920,8 +2149,6 @@ StringXNumber ViewOptions_Number[] = {
   { F|O, "ExternalView" , opt_view_external_view , -1. ,
     "Index of the view used to color vector fields (-1: self)" },
 
-  { F|O, "FakeTransparency" , opt_view_fake_transparency , 0. ,
-    "Use fake transparency (cheaper than the real thing, but incorrect)" },
   { F|O, "ForceNumComponents" , opt_view_force_num_components , 0. ,
     "Force number of components to display (see View.ComponentMapN for mapping)" },
 
@@ -1947,7 +2174,7 @@ StringXNumber ViewOptions_Number[] = {
   { F|O, "LineType" , opt_view_line_type , 0. ,
     "Display lines as solid color segments (0), 3D cylinders (1) or tapered "
     "cylinders (2)" },
-  { F|O, "LineWidth" , opt_view_line_width , 1.0 ,
+  { F|O, "LineWidth" , opt_view_line_width , 2.0 ,
     "Display width of lines (in pixels)" },
 
   { F|O,   "MaxRecursionLevel" , opt_view_max_recursion_level , 0. ,
@@ -1991,7 +2218,10 @@ StringXNumber ViewOptions_Number[] = {
   { F,   "OffsetZ" , opt_view_offset2 , 0. ,
     "Translation of the view along Z-axis (in model coordinates)" },
 
-  { F|O, "PointSize" , opt_view_point_size , 3. ,
+  { F|O, "Opacity" , opt_view_opacity , 1. ,
+    "Opacity factor applied to the colormap (1: unchanged, 0: fully "
+    "transparent)" },
+  { F|O, "PointSize" , opt_view_point_size , 6. ,
     "Display size of points (in pixels)" },
   { F|O, "PointType" , opt_view_point_type , 0. ,
     "Display points as solid color dots (0), 3D spheres (1), scaled dots "
@@ -2016,8 +2246,12 @@ StringXNumber ViewOptions_Number[] = {
     "Element sampling rate (draw one out every `Sampling' elements)" },
   { F|O, "SaturateValues" , opt_view_saturate_values , 0. ,
     "Saturate the view values to custom min and max (1: true, 0: false)" },
+  { F|O, "ScaleThreshold" , opt_view_scale_threshold , 0. ,
+    "Value below which a symmetric logarithmic scale is linear (0: automatic, "
+    "four decades below the largest value)" },
   { F|O, "ScaleType" , opt_view_scale_type , 1 ,
-    "Value scale type (1: linear, 2: logarithmic, 3: double logarithmic)" },
+    "Value scale type (1: linear, 2: logarithmic, 3: symmetric logarithmic, "
+    "logarithmic on both sides of zero and linear in between)" },
   { F|O, "ShowElement" , opt_view_show_element , 0. ,
     "Show element boundaries?" },
   { F|O, "ShowScale" , opt_view_show_scale , 1. ,
@@ -2032,8 +2266,13 @@ StringXNumber ViewOptions_Number[] = {
 
   { F|O, "Tangents" , opt_view_tangents , 0. ,
     "Display size of tangent vectors (in pixels)" },
-  { F|O, "TargetError" , opt_view_target_error , 1e-4 ,
-    "Target representation error for adaptive views" },
+  { F|O, "TargetError" , opt_view_target_error , 1e-3 ,
+    "Target error of adaptive views: the largest difference allowed between the "
+    "field and what is drawn of it, as a fraction of the range of the view: the "
+    "custom range if RangeType is 2 (the elements with values all outside of it "
+    "are then not refined), or else that of the data over all steps (the "
+    "elements are refined until it is reached, down to MaxRecursionLevel; a "
+    "negative value refines them all)" },
   { F|O, "TensorType" , opt_view_tensor_type , 1. ,
     "Tensor display type (1: Von-Mises, 2: maximum eigenvalue, 3: minimum eigenvalue, "
     "4: eigenvectors, 5: ellipse, 6: ellipsoid, 7: frame (box), 8: frame (vectors))"},
@@ -2088,7 +2327,7 @@ StringXNumber PrintOptions_Number[] = {
   { F|O, "ParameterSteps" , opt_print_parameter_steps , 10. ,
     "Number of steps in loop over print parameter" },
 
-  { F|O, "Background" , opt_print_background , 0. ,
+  { F|O, "Background" , opt_print_background , 1. ,
     "Print background (gradient and image)?" },
 
   { F|O, "CompositeWindows" , opt_print_composite_windows , 0. ,
@@ -2130,7 +2369,7 @@ StringXNumber PrintOptions_Number[] = {
     "Output transparent GIF image" },
 
   { F|O, "Height" , opt_print_height , -1. ,
-    "Height of printed image; use (possibly scaled) current height if < 0" },
+    "Height of the printed image in pixels; use the current height if < 0" },
 
   { F|O, "JpegQuality" , opt_print_jpeg_quality , 100. ,
     "JPEG quality (between 1 and 100)" },
@@ -2165,6 +2404,13 @@ StringXNumber PrintOptions_Number[] = {
     "Save Disto quality measure in mesh statistics exported as "
     "post-processing views" },
 
+  { F|O, "ScalePixelSizes" , opt_print_scale_pixel_sizes , 1. ,
+    "Scale what is sized in pixels (fonts, line widths, point and glyph "
+    "sizes, value scales) with the size of the picture, so that a large "
+    "picture looks like the window (0: keep their screen size)" },
+  { F|O, "Supersampling" , opt_print_supersampling , 1. ,
+    "Render pictures at this multiple of their size and average them down" },
+
   { F|O, "TexAsEquation" , opt_print_tex_as_equation , 0. ,
     "Print all TeX strings as equations" },
   { F|O, "TexForceFontSize" , opt_print_tex_force_fontsize , 0. ,
@@ -2179,7 +2425,7 @@ StringXNumber PrintOptions_Number[] = {
     "Produce highly compatible X3D output (no scale bar)" },
   { F|O, "X3dPrecision" , opt_print_x3d_precision , 1.e-9 ,
     "Precision of X3D output" },
-  { F|O, "X3dRemoveInnerBorders" , opt_print_x3d_remove_inner_borders , 0. ,
+  { F|O, "X3dRemoveInnerBorders" , opt_print_x3d_remove_inner_borders , 1. ,
     "Remove inner borders in X3D output" },
   { F|O, "X3dTransparency" , opt_print_x3d_transparency , 0. ,
     "Transparency for X3D output" },
@@ -2199,7 +2445,7 @@ StringXNumber PrintOptions_Number[] = {
     "Apply colors to faces (0: no, 1: yes)"},
 
   { F|O, "Width" , opt_print_width , -1. ,
-    "Width of printed image; use (possibly scaled) current width if < 0)" },
+    "Width of the printed image in pixels; use the current width if < 0" },
 
   { 0, nullptr , nullptr , 0., "" }
 } ;
@@ -2239,6 +2485,11 @@ StringXColor GeneralOptions_Color[] = {
   { F|O, "SpecularLight" , opt_general_color_specular_light,
     {255, 255, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255}, {255, 255, 255, 255},
     "Specular light color" },
+  { F|O, "Query" , opt_general_color_query ,
+    {255, 232, 70, 255}, {255, 232, 70, 255}, {255, 232, 70, 255}, {255, 232, 70, 255},
+    "Color of what a query leaves on the picture: the mark of the point it "
+    "asked about is drawn in it, and the box that answers on paper of it, "
+    "lightened over a light picture and darkened over a dark one" },
   { 0, nullptr , nullptr ,  {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} , {0, 0, 0, 0} , nullptr }
 } ;
 
@@ -2268,8 +2519,8 @@ StringXColor GeometryOptions_Color[] = {
     {255, 150, 0, 255}, {255, 150, 0, 255}, {255, 150, 0, 255}, {255, 150, 0, 255},
     "Highlight 1 color" },
   { F|O, "HighlightTwo" , opt_geometry_color_highlight2 ,
-    {255, 255, 0, 255}, {255, 255, 0, 255}, {255, 255, 0, 255}, {255, 255, 0, 255},
-    "Highlight 2 color" },
+    {255, 150, 0, 255}, {255, 150, 0, 255}, {255, 150, 0, 255}, {255, 150, 0, 255},
+    "Highlight 2 color, which the entity under the mouse is drawn in" },
   { F|O, "Tangents" , opt_geometry_color_tangents ,
     {255, 255, 0, 255}, {255, 255, 0, 255}, {0, 0, 0, 255}, {255, 255, 0, 255},
     "Tangent geometry vectors color" },
@@ -2347,6 +2598,12 @@ StringXColor MeshOptions_Color[] = {
   { F|O, "Trihedra" , opt_mesh_color_trihedron ,
     COLR, COLR, COLW, COLR,
      "Mesh trihedron color (if Mesh.ColorCarousel=0)" },
+  { F|O, "Polygons" , opt_mesh_color_polygon ,
+    COLT, COLT, COLW, COLT,
+     "Mesh polygon color (if Mesh.ColorCarousel=0)" },
+  { F|O, "Polyhedra" , opt_mesh_color_polyhedron ,
+    COLQ, COLQ, COLW, COLQ,
+     "Mesh polyhedron color (if Mesh.ColorCarousel=0)" },
   { F|O, "Tangents" , opt_mesh_color_tangents ,
     {255, 255, 0, 255}, {255, 255, 0, 255}, {0, 0, 0, 255}, {255, 255, 0, 255},
     "Tangent mesh vector color" },
@@ -2416,6 +2673,8 @@ StringXColor ViewOptions_Color[] = {
   { F|O, "Prisms" , opt_view_color_prisms , ELECOL, "Prism color" },
   { F|O, "Pyramids" , opt_view_color_pyramids , ELECOL, "Pyramid color" },
   { F|O, "Trihedra" , opt_view_color_trihedra , ELECOL, "Trihedron color" },
+  { F|O, "Polygons" , opt_view_color_polygons , ELECOL, "Polygon color" },
+  { F|O, "Polyhedra" , opt_view_color_polyhedra , ELECOL, "Polyhedron color" },
   { F|O, "Tangents" , opt_view_color_tangents ,
     {255, 255, 0, 255}, {255, 255, 0, 255}, {0, 0, 0, 255}, {255, 255, 0, 255},
     "Tangent vector color" },

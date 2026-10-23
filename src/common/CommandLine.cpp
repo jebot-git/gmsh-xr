@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -88,7 +88,8 @@ std::vector<std::pair<std::string, std::string> > GetUsage()
                  "then exit"));
   s.push_back(mp("-reclassify angle", "Reclassify surface mesh, then exit"));
   s.push_back(mp("-reparam angle", "Reparametrize surface mesh, then exit"));
-  s.push_back(mp("-hybrid", "generate a hybrid hex-tet mesh with trihedron for transitions"));
+  s.push_back(mp("-hybrid", "generate a hybrid hex-tet mesh with trihedron for "
+                 "transitions"));
   s.push_back(mp("-part int", "Partition after batch mesh generation "
                  "(Mesh.NbPartitions)"));
   s.push_back(mp("-part_weight [tri,quad,tet,hex,pri,pyr,trih] int",
@@ -104,15 +105,18 @@ std::vector<std::pair<std::string, std::string> > GetUsage()
                  "(Mesh.PartitionCreatePhysicals)"));
   s.push_back(mp("-part_topo_pro", "Save the partition topology .pro file "
                  "(Mesh.PartitionTopologyFile)"));
+  s.push_back(mp("-overlap int", "Create partition overlaps after batch mesh "
+                 "generation (Mesh.OverlapLayers)"));
   s.push_back(mp("-preserve_numbering_msh2", "Preserve element numbering in MSH2 "
                  "format (Mesh.PreserveNumberingMsh2)"));
   s.push_back(mp("-save_all", "Save all elements (Mesh.SaveAll)"));
   s.push_back(mp("-save_parametric", "Save nodes with their parametric "
                  "coordinates (Mesh.SaveParametric)"));
   s.push_back(mp("-save_topology", "Save model topology (Mesh.SaveTopology)"));
+  s.push_back(mp("-save_views", "Save all views with the mesh (Mesh.SaveViews)"));
   s.push_back(mp("-algo string", "Select mesh algorithm: auto, meshadapt, del2d, "
-                 "front2d, delquad, quadqs, initial2d, del3d, front3d, mmg3d, hxt, "
-                 "initial3d (Mesh.Algorithm and Mesh.Algorithm3D)"));
+                 "front2d, delquad, quadqs, initial2d, del3d, pdel3d, front3d, "
+                 "mmg3d, hxt, initial3d (Mesh.Algorithm and Mesh.Algorithm3D)"));
   s.push_back(mp("-smooth int", "Set number of mesh smoothing steps "
                  "(Mesh.Smoothing)"));
   s.push_back(mp("-order int", "Set mesh order (Mesh.ElementOrder)"));
@@ -193,6 +197,7 @@ std::vector<std::pair<std::string, std::string> > GetUsage()
   s.push_back(mp("-open", "Open next files"));
   s.push_back(mp("-log filename", "Log all messages to filename"));
 #if defined(HAVE_FLTK)
+  s.push_back(mp("-shaders", "Draw with the shader pipeline (General.Shaders)"));
   s.push_back(mp("-a, -g, -m, -s, -p", "Start in automatic, geometry, mesh, "
                  "solver or post-processing mode (General.InitialModule)"));
 #endif
@@ -212,8 +217,9 @@ std::vector<std::pair<std::string, std::string> > GetUsage()
   s.push_back(mp("-noenv", "Don't modify the environment at startup"));
   s.push_back(mp("-nolocale", "Don't modify the locale at startup"));
   s.push_back(mp("-option file", "Parse option file at startup"));
-  s.push_back(mp("-convert files", "Convert files into latest binary formats, "
-                 "then exit"));
+  s.push_back(mp("-convert files",
+                 "Convert the mesh and the views of each file "
+                 "into a binary MSH 4.2 file (name_new.msh), then exit"));
   s.push_back(mp("-nt int", "Set number of threads (General.NumThreads)"));
   s.push_back(mp("-cpu", "Report CPU times for all operations"));
   s.push_back(mp("-version", "Show version number"));
@@ -283,6 +289,7 @@ GetShortcutsUsage(const std::string &ctrl)
   s.push_back(mp(cc + "q", "Quit"));
   s.push_back(mp(cc + "r", "Rename project file"));
   s.push_back(mp(cc + "s", "Save mesh in default format"));
+  s.push_back(mp(cc + "t", "Run solver"));
   s.push_back(mp("Shift+" + cc + "c", "Show clipping plane window"));
   s.push_back(mp("Shift+" + cc + "h", "Show current options and workspace "
                  "window"));
@@ -543,6 +550,17 @@ static bool GetMeshOption(const std::vector<std::string> &argv,
       if(exitOnError) Msg::Exit(1);
     }
   }
+  else if(argv[i] == "-overlap") {
+    i++;
+    if(i < argv.size()) {
+      CTX::instance()->batchAfterMesh = 1;
+      opt_mesh_overlap_layers(0, GMSH_SET, atoi(argv[i++].c_str()));
+    }
+    else {
+      Msg::Error("Missing number");
+      if(exitOnError) Msg::Exit(1);
+    }
+  }
   else if(argv[i] == "-part_weight" || argv[i] == "-partWeight") {
     i++;
     bool check = true;
@@ -630,6 +648,10 @@ static bool GetMeshOption(const std::vector<std::string> &argv,
   }
   else if(argv[i] == "-saveall" || argv[i] == "-save_all") {
     opt_mesh_save_all(0, GMSH_SET, 1);
+    i++;
+  }
+  else if(argv[i] == "-save_views") {
+    opt_mesh_save_views(0, GMSH_SET, 2);
     i++;
   }
   else if(argv[i] == "-switch_tags") {
@@ -772,22 +794,27 @@ static bool GetMeshOption(const std::vector<std::string> &argv,
     i++;
     CTX::instance()->batch = 1;
     while(i < argv.size()) {
-      std::string fileName = std::string(argv[i]) + "_new";
+      std::vector<std::string> split = SplitFileName(argv[i]);
+      std::string fileName = split[0] + split[1] + "_new.msh";
+      bool views = false;
 #if defined(HAVE_POST)
       std::size_t n = PView::list.size();
 #endif
       OpenProject(argv[i]);
 #if defined(HAVE_POST)
-      // convert post-processing views to latest binary format
-      for(std::size_t j = n; j < PView::list.size(); j++)
-        PView::list[j]->write(fileName, 1, (j == n) ? false : true);
+      views = (PView::list.size() > n);
 #endif
-      // convert mesh to latest binary format
-      if(GModel::current()->getMeshStatus() > 0) {
-        opt_mesh_msh_file_version(0, GMSH_SET, 4.1);
+      // the mesh and the views, in the latest binary MSH format
+      if(GModel::current()->getMeshStatus() > 0 || views) {
+        opt_mesh_msh_file_version(0, GMSH_SET, 4.2);
         opt_mesh_binary(0, GMSH_SET, 1);
+        opt_mesh_save_views(0, GMSH_SET, 2);
         CreateOutputFile(fileName, FORMAT_MSH);
       }
+#if defined(HAVE_POST)
+      // (not with those of the next file)
+      while(PView::list.size() > n) delete PView::list.back();
+#endif
       i++;
     }
     Msg::Exit(0);
@@ -1001,6 +1028,8 @@ static bool GetMeshOption(const std::vector<std::string> &argv,
         opt_mesh_algo3d(0, GMSH_SET, ALGO_3D_RTREE);
       else if(argv[i] == "hxt")
         opt_mesh_algo3d(0, GMSH_SET, ALGO_3D_HXT);
+      else if(argv[i] == "pdel3d")
+        opt_mesh_algo3d(0, GMSH_SET, ALGO_3D_PDEL3D);
       else if(argv[i] == "initial3d")
         opt_mesh_algo3d(0, GMSH_SET, ALGO_3D_INITIAL_ONLY);
       else {
@@ -1230,6 +1259,10 @@ static bool GetOtherOption(const std::vector<std::string> &argv,
     opt_general_nopopup(0, GMSH_SET, 1);
     i++;
   }
+  else if(argv[i] == "-shaders" || argv[i] == "-shader") {
+    opt_general_shaders(0, GMSH_SET, 1);
+    i++;
+  }
   else if(argv[i] == "-watch") {
     i++;
     if(i < argv.size()) {
@@ -1392,7 +1425,7 @@ static bool GetOtherOption(const std::vector<std::string> &argv,
   else if(argv[i] == "-help" || argv[i] == "--help") {
     Msg::Direct("Gmsh, a 3D mesh generator with pre- and post-processing "
                 "facilities");
-    Msg::Direct("Copyright (C) 1997-2025 C. Geuzaine and J.-F. Remacle");
+    Msg::Direct("Copyright (C) 1997-2026 C. Geuzaine and J.-F. Remacle");
     PrintUsage(argv[0]);
     Msg::Exit(0);
   }

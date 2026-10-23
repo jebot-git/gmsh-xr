@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -43,6 +43,8 @@ const nodalBasis *BasisFactory::getNodalBasis(int tag)
     case(TYPE_TET):
     case(TYPE_HEX): F = new polynomialBasis(tag); break;
     case(TYPE_PYR): F = new pyramidalBasis(tag); break;
+    case(TYPE_POLYG):
+    case(TYPE_POLYH): break;
     default:
       Msg::Error("Unknown type of element %d (in BasisFactory)", tag);
       return nullptr;

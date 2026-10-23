@@ -65,7 +65,9 @@ exec /usr/local/bin/gmsh -dome-xr "$@"
     copy(root/'doc/DomeD-XR.md', 'usr/local/share/doc/gmsh/DomeD-XR.md')
     copy(root.parent/'DomeD/README.md', 'usr/local/share/doc/domed/README.md')
     copy(root.parent/'DomeD/docs/man/dome-compositor.1', 'usr/local/share/man/man1/dome-compositor.1')
-    record = {'upstream': 'https://github.com/gmsh-project/gmsh', 'tag': 'gmsh_4_15_2',
+    record = {'upstream': 'https://gitlab.onelab.info/gmsh/gmsh.git',
+              'upstream_commit': 'c020e8f438f8a6dfc674f440ded2030f59d8d502',
+              'version': '5.0.0-dev',
               'base_commit': subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip(),
               'local_domexr_changes': True, 'FLTK': '/opt/fltk-vr/toolkit (1.4.5)',
               'optimization': '-O3 -march=native; LTO'}

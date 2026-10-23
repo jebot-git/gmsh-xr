@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -150,14 +150,13 @@ onelabContextWindow::onelabContextWindow(int deltaFontSize)
 
   win = new contextWindow(_width, _height,
                           CTX::instance()->nonModalWindows ? true : false,
-                          "Parameters");
+                          "Parameters",
+                          CTX::instance()->ctxOffset);
   win->box(GMSH_WINDOW_BOX);
 
   _choice = new Fl_Choice(WB, WB, _width - 2 * WB, BH);
   _choice->callback(choice_cb);
 
-  win->position(CTX::instance()->ctxPosition[0],
-                CTX::instance()->ctxPosition[1]);
   win->end();
 
   FL_NORMAL_SIZE += deltaFontSize;

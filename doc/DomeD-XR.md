@@ -1,7 +1,8 @@
 # Gmsh in DomeD XR
 
-This checkout starts at upstream Gmsh 4.15.2, tag `gmsh_4_15_2`, from the
-[official mirror](https://github.com/gmsh-project/gmsh). It uses DomeD's installed
+This checkout merges upstream master `c020e8f438f8a6dfc674f440ded2030f59d8d502`
+(2026-10-18, Gmsh 5.0 development) from the
+[official repository](https://gitlab.onelab.info/gmsh/gmsh). It uses DomeD's installed
 patched FLTK 1.4.5; it does not use a Qt frontend or create a second OpenXR session.
 
 Run `bash scripts/build-domed.sh` to build with `-O3`, native CPU tuning and LTO.
@@ -87,7 +88,8 @@ uv run --with pillow --with python-xlib --with dbus-next python scripts/test-dom
 ```
 
 The integration test uses private Xvfb/D-Bus/DomeD instances and a simulated XR
-heartbeat. It generates a real tetrahedral mesh, checks rendered eye disparity,
+heartbeat. It generates a real tetrahedral mesh, checks rendered eye disparity
+in both shader and legacy OpenGL pipelines, including camera mode, and checks
 native Wayland routing, GPU DMA-BUF export, mouse rotation, universal menu
 callbacks, live appearance, native shortcuts, remapped session shortcuts and view
 lifetime.

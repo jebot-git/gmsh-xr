@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -39,6 +39,16 @@ bool gmshFace::degenerate(int dim) const
 void gmshFace::resetNativePtr(Surface *s)
 {
   _s = s;
+  // the geometry may have changed (e.g. translated): what is drawn of it is
+  // made again when needed
+  cross[0].clear();
+  cross[1].clear();
+  stl_vertices_uv.clear();
+  stl_vertices_xyz.clear();
+  stl_normals.clear();
+  stl_curvatures.clear();
+  stl_triangles.clear();
+  deleteGeometryVertexArrays();
   l_edges.clear();
   l_dirs.clear();
   edgeLoops.clear();
@@ -267,41 +277,7 @@ GPoint gmshFace::point(double par1, double par2) const
 GPoint gmshFace::closestPoint(const SPoint3 &qp,
                               const double initialGuess[2]) const
 {
-#if defined(HAVE_ALGLIB)
   return GFace::closestPoint(qp, initialGuess);
-#endif
-  if(_s->Typ == MSH_SURF_PLAN && !_s->geometry) {
-    double XP = qp.x();
-    double YP = qp.y();
-    double ZP = qp.z();
-    double VX[3], VY[3], x, y, z;
-    getMeanPlaneData(VX, VY, x, y, z);
-    double M[3][2] = {{VX[0], VY[0]}, {VX[1], VY[1]}, {VX[2], VY[2]}};
-    double MN[2][2];
-    double B[3] = {XP - x, YP - y, ZP - z};
-    double BN[2], UV[2];
-    for(int i = 0; i < 2; i++) {
-      BN[i] = 0;
-      for(int k = 0; k < 3; k++) { BN[i] += B[k] * M[k][i]; }
-    }
-    for(int i = 0; i < 2; i++) {
-      for(int j = 0; j < 2; j++) {
-        MN[i][j] = 0;
-        for(int k = 0; k < 3; k++) { MN[i][j] += M[k][i] * M[k][j]; }
-      }
-    }
-    sys2x2(MN, BN, UV);
-    return GPoint(XP, YP, ZP, this, UV);
-  }
-
-  Vertex v;
-  v.Pos.X = qp.x();
-  v.Pos.Y = qp.y();
-  v.Pos.Z = qp.z();
-  double u[2] = {initialGuess[0], initialGuess[1]};
-  bool result = ProjectPointOnSurface(_s, v, u);
-  if(!result) return GPoint(-1.e22, -1.e22, -1.e22, nullptr, u);
-  return GPoint(v.Pos.X, v.Pos.Y, v.Pos.Z, this, u);
 }
 
 SPoint2 gmshFace::parFromPoint(const SPoint3 &qp, bool onSurface,

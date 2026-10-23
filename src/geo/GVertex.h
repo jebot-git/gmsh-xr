@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -46,6 +46,12 @@ public:
   // add/delete an edge bounded by this vertex
   void addEdge(GEdge *e);
   void delEdge(GEdge *e);
+
+  virtual std::vector<GEntity *> boundaryEntities() const
+  {
+    std::vector<GEntity *> entities;
+    return entities;
+  }
 
   // regions that bound this entity or that this entity bounds.
   virtual std::list<GRegion *> regions() const;
@@ -115,7 +121,9 @@ public:
   bool isOnSeam(const GFace *gf) const;
 
   // relocate mesh vertex using GVertex coordinates
-  void relocateMeshVertices();
+  void relocateMeshVertices
+    (const std::vector<double> &pmin = std::vector<double>(),
+     const std::vector<double> &pmax = std::vector<double>());
 
   std::vector<MPoint *> points;
 

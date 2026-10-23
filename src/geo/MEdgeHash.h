@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -12,8 +12,8 @@
 struct MEdgeHash {
   size_t operator()(const MEdge &e) const
   {
-    size_t v[2] = {e.getMinVertex()->getNum(), e.getMaxVertex()->getNum()};
-    return HashFNV1a<sizeof(size_t[2])>::eval(v);
+    return HashMix(
+      HashCombine(e.getMinVertex()->getNum(), e.getMaxVertex()->getNum()));
   }
 };
 

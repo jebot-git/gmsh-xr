@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -14,11 +14,7 @@
 #include "GFace.h"
 #include "MTriangle.h"
 #include "robustPredicates.h"
-
-#if defined(HAVE_ALGLIB)
-#include <stdafx.h>
-#include <optimization.h>
-#endif
+#include "LBFGS.h"
 
 static double _tetcircumcenter(double a[3], double b[3], double c[3],
                                double d[3], double circumcenter[3])
@@ -142,48 +138,24 @@ void computeGradient(const std::vector<SPoint3> &points, const double params[6],
   }
 }
 
-#if defined(HAVE_ALGLIB)
-
-static void bfgs_callback_cyl(const alglib::real_1d_array &x, double &func,
-                              alglib::real_1d_array &grad, void *ptr)
-{
-  std::vector<SPoint3> *points = (std::vector<SPoint3> *)ptr;
-  double p[6] = {x[0], x[1], x[2], x[3], x[4], x[5]};
-  func = costFunction(*points, p);
-  double g[6];
-  computeGradient(*points, p, g);
-  for(int i = 0; i < 6; i++) grad[i] = g[i];
-}
-
-#endif
-
 void fitCylinder(std::vector<SPoint3> &points, double params[6])
 {
-#if defined(HAVE_ALGLIB)
-  alglib::ae_int_t dim = 6;
-  alglib::ae_int_t corr = 2; // Num of corrections in the scheme in [3,7]
-  alglib::minlbfgsstate state;
-  alglib::real_1d_array x;
-  const double initialCond[6] = {0, 0, 0, 0, 0, 1};
-  x.setcontent(dim, initialCond);
-  minlbfgscreate(6, corr, x, state);
-  // Set stopping criteria
-  const double epsg = 1.e-12;
-  const double epsf = 0.;
-  const double epsx = 0.;
-  const alglib::ae_int_t maxits = 500;
-  minlbfgssetcond(state, epsg, epsf, epsx, maxits);
-
-  // Solve problem
-  minlbfgsoptimize(state, bfgs_callback_cyl, nullptr, &points);
-
-  // Get results
-  alglib::minlbfgsreport rep;
-  minlbfgsresults(state, x, rep);
+  LBFGS::Options options;
+  options.memory = 2;
+  options.maxIterations = 500;
+  options.gradientTolerance = 1.e-12;
+  options.functionTolerance = 0.;
+  options.stepTolerance = 0.;
+  options.maxStepNorm = 0.;
+  std::vector<double> x = {0., 0., 0., 0., 0., 1.};
+  LBFGS::minimize(
+    x,
+    [&points](const std::vector<double> &p, std::vector<double> &grad) {
+      computeGradient(points, p.data(), grad.data());
+      return costFunction(points, p.data());
+    },
+    options);
   for(int i = 0; i < 6; i++) params[i] = x[i];
-#else
-  Msg::Error("fitCylinder requires ALGLIB");
-#endif
 }
 
 void gmshQuadricSphere::compute(std::vector<SPoint3> &p)
@@ -203,16 +175,11 @@ void gmshQuadricPlane::compute(std::vector<SPoint3> &p)
 
 double gmshQuadricPlane::distance(const SPoint3 &p)
 {
-  //  printf("p(%g %g %g) -- plane %g x + %g y + %g z + %g =
-  //  0\n",p.x(),p.y(),p.z(),meanPlane.a,meanPlane.b,meanPlane.c,meanPlane.d);
   double norm = sqrt(meanPlane.a * meanPlane.a + meanPlane.b * meanPlane.b +
                      meanPlane.c * meanPlane.c);
   double dist = fabs(meanPlane.a * p.x() + meanPlane.b * p.y() +
                      meanPlane.c * p.z() - meanPlane.d) /
                 norm;
-  //  printf("p(%g %g %g) -- plane %g x + %g y + %g z + %g = 0 DIST
-  //  %22.15E\n",p.x(),p.y(),p.z(),meanPlane.a,meanPlane.b,meanPlane.c,meanPlane.d,
-  //  dist);
   return dist;
 }
 
@@ -229,7 +196,6 @@ void gmshQuadricCylinder::compute(std::vector<SPoint3> &points)
 
 double gmshQuadricCylinder::distance(const SPoint3 &p)
 {
-  //  printf("distance = %22.15E\n", crossprod (D,(p-P)).norm() - R);
   return fabs(crossprod(D, (p - P)).norm() - R);
 }
 
@@ -238,7 +204,7 @@ void discoverQuadric(GFace *gf, int typeOfQuadric,
                      std::size_t minn)
 {
   std::map<MEdge, std::vector<MTriangle *>, MEdgeLessThan> cont;
-  printf("face %d -- %lu triangles\n", gf->tag(), gf->triangles.size());
+  printf("face %d -- %zu triangles\n", gf->tag(), gf->triangles.size());
 
   for(auto t : gf->triangles) {
     for(int i = 0; i < t->getNumEdges(); i++) {
@@ -246,7 +212,7 @@ void discoverQuadric(GFace *gf, int typeOfQuadric,
     }
   }
 
-  printf("face %d -- %lu edges\n", gf->tag(), cont.size());
+  printf("face %d -- %zu edges\n", gf->tag(), cont.size());
 
   int iter = 0;
   while(iter < (int)(gf->triangles.size() - _classified.size())) {
@@ -275,8 +241,6 @@ void discoverQuadric(GFace *gf, int typeOfQuadric,
 
     while(!_stack.empty()) {
       auto t = _stack.top();
-      //      printf("%lu %lu %lu
-      //      \n",t->getVertex(0)->getNum(),t->getVertex(1)->getNum(),t->getVertex(2)->getNum());
       _quadric.push_back(t);
       _stack.pop();
       for(int k = 0; k < 3; k++) {
@@ -305,7 +269,7 @@ void discoverQuadric(GFace *gf, int typeOfQuadric,
       }
     }
     if(_quadric.size() > minn || _quadric.size() == gf->triangles.size()) {
-      printf("iter %d _quadric.size() = %lu\n", iter, _quadric.size());
+      printf("iter %d _quadric.size() = %zu\n", iter, _quadric.size());
       std::string fn = gmshQ->name() + std::to_string(iter) + ".pos";
       FILE *f = fopen(fn.c_str(), "w");
       fprintf(f, "View \"%s \"{\n", gmshQ->name().c_str());

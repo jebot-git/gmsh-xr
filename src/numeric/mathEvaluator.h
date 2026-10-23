@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -28,8 +28,9 @@ public:
                 const std::vector<std::string> &variables);
   ~mathEvaluator();
   // evaluate the expression(s) using the given values and fill the
-  // result vector. Returns true if the evaluation succeeded.
-  bool eval(const std::vector<double> &values, std::vector<double> &res);
+  // result vector. Returns true if the evaluation succeeded. Several threads
+  // can evaluate at once.
+  bool eval(const std::vector<double> &values, std::vector<double> &res) const;
 };
 
 #else
@@ -44,7 +45,7 @@ public:
     expressions.clear();
   }
   ~mathEvaluator() {}
-  bool eval(const std::vector<double> &values, std::vector<double> &res)
+  bool eval(const std::vector<double> &values, std::vector<double> &res) const
   {
     return false;
   }

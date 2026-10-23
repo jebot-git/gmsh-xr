@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -16,6 +16,10 @@
 namespace robustPredicates {
 
 void exactinit(double maxx, double maxy, double maxz);
+
+// static filters of orient3d() and insphere(), set by exactinit(): a plain
+// floating-point determinant larger than them in magnitude has the right sign
+extern double o3dstaticfilter, ispstaticfilter;
 
 double insphere(
   const double* const __restrict__ pa,

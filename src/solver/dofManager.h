@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -421,7 +421,6 @@ public:
   {
     if(_isParallel && !_parallelFinalized) _parallelFinalize();
     if(!_current->isAllocated()) _current->allocate(sizeOfR());
-    printf("coucou\n");
 
     for(std::size_t i = 0; i < R.size(); i++) {
       auto it = associatedWith.find(R[i]);
@@ -481,7 +480,6 @@ public:
   {
     if(_isParallel && !_parallelFinalized) _parallelFinalize();
     if(!_current->isAllocated()) _current->allocate(sizeOfR());
-    printf("coucou RHS\n");
 
     for(std::size_t i = 0; i < R.size(); i++) {
       auto it = associatedWith.find(R[i]);

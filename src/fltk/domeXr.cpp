@@ -124,8 +124,21 @@ class MeshWindow : public Fl_Gl_Window {
   void draw() override {
     auto original = owner();
     if(!original) { hide(); return; }
-    if(!context_valid()) ctx.invalidateQuadricsAndDisplayLists();
+    if(!context_valid()) {
+      VertexArray::invalidateBuffers();
+      glApi::reset();
+      glShader::reset();
+      glImmediate::resetMatrices();
+      if(CTX::instance()->shaders && !glShader::available() &&
+         (mode() & FL_OPENGL3) && !glShader::wanted()) {
+        Fl::add_timeout(0., [](void *) { domeXr::redraw(); });
+        return;
+      }
+    }
+    glShader::setContext(context());
     ctx.copyViewAttributes(original->getDrawContext());
+    ctx.setHighResolutionPixelFactor(w() ? double(pixel_w()) / w() : 1.);
+    drawContext::global()->setPixelFactor(ctx.highResolutionPixelFactor());
     ctx.domeStereoBaseline = baseline;
     ctx.viewport[0] = ctx.viewport[1] = 0;
     ctx.viewport[2] = w(); ctx.viewport[3] = h();
@@ -146,6 +159,9 @@ class MeshWindow : public Fl_Gl_Window {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       ctx.domeStereoEye = eye ? 1 : -1;
       ctx.draw3d();
+      // Deferred primitives must finish before the next eye changes the viewport.
+      glImmediate::flush();
+      drawContext::global()->flushString();
     }
     ctx.domeStereoEye = 0;
     glDisable(GL_SCISSOR_TEST);
@@ -217,7 +233,7 @@ public:
   explicit MeshWindow(openglWindow *original)
     : Fl_Gl_Window(1280, 800, "Gmsh — DomeD XR mesh"), source(new Fl_Widget_Tracker(original))
   {
-    mode(FL_RGB | FL_DOUBLE | FL_DEPTH);
+    syncMode();
     xclass(appId);
     end();
     resizable(this);
@@ -229,7 +245,12 @@ public:
       std::max(0., std::min(.2, baseline + .01 * action));
     redraw();
   }
-  ~MeshWindow() { domeDesktop::detach(*this); if(context()) { make_current(); ctx.invalidateQuadricsAndDisplayLists(); } }
+  void syncMode() {
+    const int flags = FL_RGB | FL_DOUBLE | FL_DEPTH |
+                      (glShader::wanted() ? FL_OPENGL3 : 0);
+    if(mode() != flags) mode(flags);
+  }
+  ~MeshWindow() { domeDesktop::detach(*this); if(context()) { make_current(); ctx.invalidateBgImageTexture(); } }
 };
 std::unique_ptr<MeshWindow> window;
 }
@@ -255,7 +276,12 @@ void toggle()
   catch(const std::exception &e) { Msg::Error("DomeD XR: %s", e.what()); }
 }
 void separation(int action) { if(window) window->separation(action); }
-void redraw() { if(window && window->shown()) window->redraw(); }
+void redraw() {
+  if(window && window->shown()) {
+    window->syncMode();
+    window->redraw();
+  }
+}
 void start() { if(requested || !capture.empty()) toggle(); }
 void shutdown() { window.reset(); }
 }

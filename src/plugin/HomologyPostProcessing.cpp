@@ -1,14 +1,15 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 //
-// Contributed by Matti Pellikka <matti.pellikka@microsoft.com>.
+// Contributor(s): Matti Pellikka (initial implementation)
 
 #include <stdlib.h>
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <cmath>
 #include "GmshGlobal.h"
 #include "GmshConfig.h"
 #include "GModel.h"
@@ -16,25 +17,18 @@
 #include "fullMatrix.h"
 #include "HomologyPostProcessing.h"
 
-#if defined(HAVE_KBIPACK)
-
-StringXNumber HomologyPostProcessingOptions_Number[] = {
-  {GMSH_FULLRC, "ApplyBoundaryOperatorToResults", nullptr, 0}};
-
-StringXString HomologyPostProcessingOptions_String[] = {
-  {GMSH_FULLRC, "TransformationMatrix", nullptr, "1, 0; 0, 1"},
-  {GMSH_FULLRC, "PhysicalGroupsOfOperatedChains", nullptr, "1, 2"},
-  {GMSH_FULLRC, "PhysicalGroupsOfOperatedChains2", nullptr, ""},
-  {GMSH_FULLRC, "PhysicalGroupsToTraceResults", nullptr, ""},
-  {GMSH_FULLRC, "PhysicalGroupsToProjectResults", nullptr, ""},
-  {GMSH_FULLRC, "NameForResultChains", nullptr, "c"},
-};
-
-extern "C" {
-GMSH_Plugin *GMSH_RegisterHomologyPostProcessingPlugin()
+GMSH_HomologyPostProcessingPlugin::GMSH_HomologyPostProcessingPlugin()
+  : GMSH_PostPlugin(
+      {{GMSH_FULLRC, "ApplyBoundaryOperatorToResults", nullptr, 0}},
+      {
+        {GMSH_FULLRC, "TransformationMatrix", nullptr, "1, 0; 0, 1"},
+        {GMSH_FULLRC, "PhysicalGroupsOfOperatedChains", nullptr, "1, 2"},
+        {GMSH_FULLRC, "PhysicalGroupsOfOperatedChains2", nullptr, ""},
+        {GMSH_FULLRC, "PhysicalGroupsToTraceResults", nullptr, ""},
+        {GMSH_FULLRC, "PhysicalGroupsToProjectResults", nullptr, ""},
+        {GMSH_FULLRC, "NameForResultChains", nullptr, "c"},
+      })
 {
-  return new GMSH_HomologyPostProcessingPlugin();
-}
 }
 
 std::string GMSH_HomologyPostProcessingPlugin::getHelp() const
@@ -69,48 +63,6 @@ std::string GMSH_HomologyPostProcessingPlugin::getHelp() const
          "resulting chains.\n";
 }
 
-int GMSH_HomologyPostProcessingPlugin::getNbOptions() const
-{
-  return sizeof(HomologyPostProcessingOptions_Number) / sizeof(StringXNumber);
-}
-
-StringXNumber *GMSH_HomologyPostProcessingPlugin::getOption(int iopt)
-{
-  return &HomologyPostProcessingOptions_Number[iopt];
-}
-
-int GMSH_HomologyPostProcessingPlugin::getNbOptionsStr() const
-{
-  return sizeof(HomologyPostProcessingOptions_String) / sizeof(StringXString);
-}
-
-StringXString *GMSH_HomologyPostProcessingPlugin::getOptionStr(int iopt)
-{
-  return &HomologyPostProcessingOptions_String[iopt];
-}
-
-bool GMSH_HomologyPostProcessingPlugin::parseStringOpt(
-  int stringOpt, std::vector<int> &intList)
-{
-  std::string list = HomologyPostProcessingOptions_String[stringOpt].def;
-  intList.clear();
-
-  int n;
-  char a;
-  std::istringstream ss(list);
-  while(ss >> n) {
-    intList.push_back(n);
-    if(ss >> a) {
-      if(a != ',') {
-        Msg::Error("Unexpected character \'%c\' while parsing \'%s\'", a,
-                   HomologyPostProcessingOptions_String[stringOpt].str);
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 int GMSH_HomologyPostProcessingPlugin::detIntegerMatrix(
   std::vector<int> &matrix)
 {
@@ -119,7 +71,7 @@ int GMSH_HomologyPostProcessingPlugin::detIntegerMatrix(
   for(int i = 0; i < n; i++)
     for(int j = 0; j < n; j++) m(i, j) = matrix.at(i * n + j);
 
-  return m.determinant();
+  return (int)std::lround(m.determinant());
 }
 
 bool GMSH_HomologyPostProcessingPlugin::invertIntegerMatrix(
@@ -131,24 +83,26 @@ bool GMSH_HomologyPostProcessingPlugin::invertIntegerMatrix(
     for(int j = 0; j < n; j++) m(i, j) = matrix.at(i * n + j);
 
   if(!m.invertInPlace()) {
-    Msg::Error("Matrix is not unimodular");
+    Msg::Error("Matrix is not invertible");
     return false;
   }
 
+  // integer entries for a unimodular matrix: round, not truncate
   for(int i = 0; i < n; i++)
-    for(int j = 0; j < n; j++) matrix.at(i * n + j) = m(i, j);
+    for(int j = 0; j < n; j++)
+      matrix.at(i * n + j) = (int)std::lround(m(i, j));
   return true;
 }
 
 PView *GMSH_HomologyPostProcessingPlugin::execute(PView *v)
 {
-  std::string matrixString = HomologyPostProcessingOptions_String[0].def;
-  std::string opString1 = HomologyPostProcessingOptions_String[1].def;
-  std::string opString2 = HomologyPostProcessingOptions_String[2].def;
-  std::string cname = HomologyPostProcessingOptions_String[5].def;
-  std::string traceString = HomologyPostProcessingOptions_String[3].def;
-  std::string projectString = HomologyPostProcessingOptions_String[4].def;
-  int bd = (int)HomologyPostProcessingOptions_Number[0].def;
+  std::string matrixString = optionStr(0);
+  std::string opString1 = optionStr(1);
+  std::string opString2 = optionStr(2);
+  std::string cname = optionStr(5);
+  std::string traceString = optionStr(3);
+  std::string projectString = optionStr(4);
+  int bd = (int)option(0);
 
   GModel *m = GModel::current();
 
@@ -165,7 +119,7 @@ PView *GMSH_HomologyPostProcessingPlugin::execute(PView *v)
       if(ss >> a) {
         if(a != ',' && a != ';') {
           Msg::Error("Unexpected character \'%c\' while parsing \'%s\'", a,
-                     HomologyPostProcessingOptions_String[0].str);
+                     getOptionStr(0)->str);
           return nullptr;
         }
         if(a == ';') {
@@ -197,15 +151,15 @@ PView *GMSH_HomologyPostProcessingPlugin::execute(PView *v)
   }
 
   std::vector<int> basisPhysicals;
-  if(!parseStringOpt(1, basisPhysicals)) return nullptr;
+  if(!optionIntList(1, basisPhysicals)) return nullptr;
   std::vector<int> basisPhysicals2;
-  if(!parseStringOpt(2, basisPhysicals2)) return nullptr;
+  if(!optionIntList(2, basisPhysicals2)) return nullptr;
 
   if(matrixString != "I" && (int)basisPhysicals.size() != cols &&
      basisPhysicals2.empty()) {
     Msg::Error(
       "Number of matrix columns and operated chains must match (%d != %d)",
-      cols, basisPhysicals.size());
+      cols, (int)basisPhysicals.size());
     return nullptr;
   }
   else if(matrixString == "I") {
@@ -218,14 +172,14 @@ PView *GMSH_HomologyPostProcessingPlugin::execute(PView *v)
   if(!basisPhysicals2.empty() &&
      basisPhysicals.size() != basisPhysicals2.size()) {
     Msg::Error("Number of operated chains must match (%d != %d)",
-               basisPhysicals.size(), basisPhysicals2.size());
+               (int)basisPhysicals.size(), (int)basisPhysicals2.size());
     return nullptr;
   }
 
   std::vector<int> tracePhysicals;
-  if(!parseStringOpt(3, tracePhysicals)) return nullptr;
+  if(!optionIntList(3, tracePhysicals)) return nullptr;
   std::vector<int> projectPhysicals;
-  if(!parseStringOpt(4, projectPhysicals)) return nullptr;
+  if(!optionIntList(4, projectPhysicals)) return nullptr;
 
   std::vector<Chain<int> > curBasis;
   for(std::size_t i = 0; i < basisPhysicals.size(); i++) {
@@ -316,5 +270,3 @@ PView *GMSH_HomologyPostProcessingPlugin::execute(PView *v)
 
   return nullptr;
 }
-
-#endif

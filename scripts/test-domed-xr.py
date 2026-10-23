@@ -30,7 +30,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     root = Path(__file__).resolve().parents[1]
     parser.add_argument('--gmsh', type=Path, default=root / 'build-domed/gmsh')
-    parser.add_argument('--compositor', type=Path, default=root.parent / 'DomeD/target/release/dome-compositor')
+    parser.add_argument('--compositor', type=Path, default=Path('/usr/local/bin/dome-compositor'))
     args = parser.parse_args()
     if os.environ.get('GMSH_DOME_TEST_BUS') != '1':
         os.execvpe('dbus-run-session', ['dbus-run-session', '--', sys.executable, *sys.argv],
@@ -85,7 +85,7 @@ def main():
                    'XDG_CONFIG_HOME': tmp + '/config', 'XDG_STATE_HOME': tmp + '/state',
                    'XDG_DATA_HOME': tmp + '/data', 'DOME_PREVIEW_PORT': str(port),
                    'DOME_LOGIN_SESSION': '0', 'DOME_START_XR': '0', 'DOME_START_IME': '0',
-                   'DOME_SESSION_RESTORE': '0', 'DOME_APPEARANCE_SERVICE': '1', 'LD_LIBRARY_PATH': '/opt/fltk-vr/toolkit/lib',
+                   'DOME_SESSION_RESTORE': '0', 'DOME_APPEARANCE_SERVICE': '1', 'LD_LIBRARY_PATH': '/opt/fltk-vr/toolkit/lib' + (':' + os.environ['LD_LIBRARY_PATH'] if os.environ.get('LD_LIBRARY_PATH') else ''),
                    'FLTK_BACKEND': 'x11'}
             for key in ['WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'DOME_BACKEND', 'DOME_RENDERER']:
                 env.pop(key, None)
@@ -113,6 +113,22 @@ def main():
             left, right = eyes(picture)
             check(max(ImageStat.Stat(left).var) > 10 and ImageChops.difference(left, right).getbbox(),
                   'Actual mesh renders with distinct left/right geometry')
+            # Upstream 5.0 uses CPU matrices and deferred shader primitives.
+            # Exercise both GL paths and the independently positioned camera.
+            for shaders, camera in [(0, 0), (0, 1), (1, 1)]:
+                name = f'stereo-shaders-{shaders}-camera-{camera}'
+                target = out / (name + '.ppm')
+                target.unlink(missing_ok=True)
+                child = start([args.gmsh, mesh, '-dome-xr-capture', target, *view,
+                               '-setnumber', 'General.Shaders', str(shaders),
+                               '-setnumber', 'General.Camera', str(camera)], name, env)
+                check(child.wait(timeout=30) == 0 and target.is_file(),
+                      f'Stereo capture completes with shaders={shaders}, camera={camera}')
+                image = Image.open(target).convert('RGB')
+                image.save(out / (name + '.png'))
+                l, r = eyes(image)
+                check(max(ImageStat.Stat(l).var) > 10 and ImageChops.difference(l, r).getbbox(),
+                      f'Mesh has stereo disparity with shaders={shaders}, camera={camera}')
             compositor = start([args.compositor, '--backend', 'nested'], 'compositor', env)
             base = f'http://127.0.0.1:{port}'
             def get(path):
@@ -126,7 +142,8 @@ def main():
                 return get('/api/state')['scene']
             wait(lambda: scene()['source'] == 'wayland')
             match = wait(lambda: re.search(r'Dome Wayland socket: (\S+)', (out/'compositor.log').read_text()))
-            fonts = wait(lambda: next(runtime.glob('dome-appearance-*/fonts.conf'), None))
+            fonts = wait(lambda: next(runtime.glob('dome-fonts/fonts.conf'), None) or
+                         next(runtime.glob('dome-appearance-*/fonts.conf'), None))
             client = {**env, 'FONTCONFIG_FILE': str(fonts), 'WAYLAND_DISPLAY': match[1], 'DISPLAY': '', 'FLTK_BACKEND': 'wayland',
                       'XDG_CURRENT_DESKTOP': 'Dome', 'DE_XR_APPEARANCE_TRACE': '1'}
             refused = start([args.gmsh, mesh, '-term', '-dome-xr'], 'inactive', client)
@@ -275,8 +292,8 @@ def main():
                 return image.getpixel((image.width-10, 10))
             dark = wait(ui_pixel)
             appearance.write_text(json.dumps({'light': True, 'accent': '#bb3377',
-                'font': 'Cozette / Medium', 'font_size': 13}))
-            wait(lambda: 'size=13' in (out/'wayland-gmsh.log').read_text())
+                'font': 'Fusion Pixel 12px Mono latin / Sans-Serif', 'font_size': 12}))
+            wait(lambda: 'size=12' in (out/'wayland-gmsh.log').read_text())
             wait(lambda: sum(ui_pixel()) > sum(dark)+150)
             check(True, 'Live appearance changes update native UI palette and bitmap font')
             frame(desktop['id']).save(out/'desktop-light.png')

@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -30,6 +30,8 @@ OCCRegion::OCCRegion(GModel *m, TopoDS_Solid s, int num)
 
   // if(tag() == 1) writeBREP("v1.brep");
 }
+
+OCCRegion::~OCCRegion() = default;
 
 void OCCRegion::_setup()
 {
@@ -108,7 +110,9 @@ SBoundingBox3d OCCRegion::bounds(bool fast)
 
   Bnd_Box b;
   try {
-    BRepBndLib::Add(_s, b);
+    // not from a triangulation the shape may carry (e.g. made to draw it):
+    // the box would change once the shape has been drawn
+    BRepBndLib::Add(_s, b, false);
   } catch(Standard_Failure &err) {
     Msg::Error("OpenCASCADE exception %s", err.GetMessageString());
     return SBoundingBox3d();
@@ -123,10 +127,12 @@ GEntity::GeomType OCCRegion::geomType() const { return Volume; }
 
 bool OCCRegion::containsPoint(const SPoint3 &pt) const
 {
-  BRepClass3d_SolidClassifier solidClassifier(_s);
-  solidClassifier.Perform(gp_Pnt{pt.x(), pt.y(), pt.z()},
-                          CTX::instance()->geom.tolerance);
-  const TopAbs_State state = solidClassifier.State();
+  // the classifier setup is expensive: build it once (the shape never changes)
+  if(!_solidClassifier)
+    _solidClassifier.reset(new BRepClass3d_SolidClassifier(_s));
+  _solidClassifier->Perform(gp_Pnt{pt.x(), pt.y(), pt.z()},
+                            CTX::instance()->geom.tolerance);
+  const TopAbs_State state = _solidClassifier->State();
   return (state == TopAbs_IN || state == TopAbs_ON);
 }
 

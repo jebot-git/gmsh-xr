@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -16,6 +16,11 @@
 #include "MHexahedron.h"
 #include "MPrism.h"
 #include "MPyramid.h"
+#include "MPolygon.h"
+#include "MPolyhedron.h"
+#include "MElement.h"
+#include "ElementType.h"
+#include "VTKXML.h"
 #include "StringUtils.h"
 #include "GmshVersion.h"
 
@@ -61,7 +66,8 @@ int GModel::writeVTK(const std::string &name, bool binary, bool saveAll,
       for(std::size_t j = 0; j < entities[i]->getNumMeshElements(); j++) {
         if(entities[i]->getMeshElement(j)->getTypeForVTK()) {
           numElements++;
-          totalNumInt += entities[i]->getMeshElement(j)->getNumVertices() + 1;
+          totalNumInt +=
+            entities[i]->getMeshElement(j)->getNumVerticesVTK() + 1;
         }
       }
     }
@@ -131,6 +137,13 @@ int GModel::writeVTK(const std::string &name, bool binary, bool saveAll,
   return 1;
 }
 
+// binary data starts on the line after the keyword that announces it
+static void skipToNextLine(FILE *fp)
+{
+  int c;
+  while((c = fgetc(fp)) != EOF && c != '\n') {}
+}
+
 int GModel::readVTK(const std::string &name, bool bigEndian)
 {
   FILE *fp = Fopen(name.c_str(), "rb");
@@ -191,6 +204,7 @@ int GModel::readVTK(const std::string &name, bool bigEndian)
     return 0;
   }
   Msg::Info("Reading %zu points", numVertices);
+  if(binary) skipToNextLine(fp);
   std::vector<MVertex *> vertices(numVertices);
   for(std::size_t i = 0; i < numVertices; i++) {
     double xyz[3];
@@ -228,6 +242,8 @@ int GModel::readVTK(const std::string &name, bool bigEndian)
     return 0;
   }
 
+  if(binary) skipToNextLine(fp);
+
   bool haveCells = true;
   bool haveLines = false;
   if(!strcmp(buffer, "CELLS") && numElements > 0)
@@ -250,41 +266,53 @@ int GModel::readVTK(const std::string &name, bool bigEndian)
   int iSurface = getMaxElementaryNumber(2) + 1;
   int iVolume = getMaxElementaryNumber(3) + 1;
 
-  std::map<int, std::vector<MElement *>> elements[8];
+  std::map<int, std::vector<MElement *>> elements[10];
+
+  // the nodes at the given indices (false if one is out of range)
+  auto nodesAt = [&](const int *idx, int n, std::vector<MVertex *> &v) {
+    v.clear();
+    for(int j = 0; j < n; j++) {
+      if(idx[j] < 0 || idx[j] >= (int)vertices.size()) {
+        Msg::Error("Wrong node index %d", idx[j]);
+        return false;
+      }
+      v.push_back(vertices[idx[j]]);
+    }
+    return true;
+  };
 
   if(haveCells) {
-    std::vector<std::vector<MVertex *>> cells(numElements);
+    // the ints of each cell: node indices, except for the polyhedra (see
+    // below)
+    std::vector<std::vector<int>> cells(numElements);
     for(std::size_t i = 0; i < cells.size(); i++) {
-      int numVerts, n[100];
+      int numInts;
       if(binary) {
-        if(fread(&numVerts, sizeof(int), 1, fp) != 1) {
+        if(fread(&numInts, sizeof(int), 1, fp) != 1) {
           fclose(fp);
           return 0;
         }
-        if(!bigEndian) SwapBytes((char *)&numVerts, sizeof(int), 1);
-        if((int)fread(n, sizeof(int), numVerts, fp) != numVerts) {
+        if(!bigEndian) SwapBytes((char *)&numInts, sizeof(int), 1);
+        cells[i].resize(std::max(numInts, 0));
+        if(numInts > 0 &&
+           (int)fread(&cells[i][0], sizeof(int), numInts, fp) != numInts) {
           fclose(fp);
           return 0;
         }
-        if(!bigEndian) SwapBytes((char *)n, sizeof(int), numVerts);
+        if(!bigEndian) SwapBytes((char *)&cells[i][0], sizeof(int), numInts);
       }
       else {
-        if(fscanf(fp, "%d", &numVerts) != 1) {
+        if(fscanf(fp, "%d", &numInts) != 1) {
           fclose(fp);
           return 0;
         }
-        for(int j = 0; j < numVerts; j++) {
-          if(fscanf(fp, "%d", &n[j]) != 1) {
+        cells[i].resize(std::max(numInts, 0));
+        for(int j = 0; j < numInts; j++) {
+          if(fscanf(fp, "%d", &cells[i][j]) != 1) {
             fclose(fp);
             return 0;
           }
         }
-      }
-      for(int j = 0; j < numVerts; j++) {
-        if(n[j] >= 0 && n[j] < (int)vertices.size())
-          cells[i].push_back(vertices[n[j]]);
-        else
-          Msg::Error("Wrong node index %d", n[j]);
       }
     }
 
@@ -298,6 +326,9 @@ int GModel::readVTK(const std::string &name, bool bigEndian)
         fclose(fp);
         return 0;
       }
+      if(binary) skipToNextLine(fp);
+      MElementFactory factory;
+      std::vector<MElement *> created(cells.size(), nullptr);
       for(std::size_t i = 0; i < cells.size(); i++) {
         int type;
         if(binary) {
@@ -313,112 +344,115 @@ int GModel::readVTK(const std::string &name, bool bigEndian)
             return 0;
           }
         }
-        int numVerts = cells[i].size(), order;
-        switch(type) {
-        case 1: elements[0][iPoint++].push_back(new MPoint(cells[i])); break;
-        // first order elements
-        case 3: elements[1][iCurve].push_back(new MLine(cells[i])); break;
-        case 5: elements[2][iSurface].push_back(new MTriangle(cells[i])); break;
-        case 9:
-          elements[3][iSurface].push_back(new MQuadrangle(cells[i]));
-          break;
-        case 10:
-          elements[4][iVolume].push_back(new MTetrahedron(cells[i]));
-          break;
-        case 12:
-          elements[5][iVolume].push_back(new MHexahedron(cells[i]));
-          break;
-        case 13: elements[6][iVolume].push_back(new MPrism(cells[i])); break;
-        case 14: elements[7][iVolume].push_back(new MPyramid(cells[i])); break;
-        // second order elements
-        case 21: elements[1][iCurve].push_back(new MLine3(cells[i])); break;
-        case 22:
-          elements[2][iSurface].push_back(new MTriangle6(cells[i]));
-          break;
-        case 23:
-          elements[3][iSurface].push_back(new MQuadrangle8(cells[i]));
-          break;
-        case 28:
-          elements[3][iSurface].push_back(new MQuadrangle9(cells[i]));
-          break;
-        case 24:
-          elements[4][iVolume].push_back(new MTetrahedron10(
-            cells[i][0], cells[i][1], cells[i][2], cells[i][3], cells[i][4],
-            cells[i][5], cells[i][6], cells[i][7], cells[i][9], cells[i][8]));
-          break;
-        case 25:
-          elements[5][iVolume].push_back(new MHexahedron20(
-            cells[i][0], cells[i][1], cells[i][2], cells[i][3], cells[i][4],
-            cells[i][5], cells[i][6], cells[i][7], cells[i][8], cells[i][11],
-            cells[i][13], cells[i][9], cells[i][16], cells[i][18], cells[i][19],
-            cells[i][17], cells[i][10], cells[i][12], cells[i][14],
-            cells[i][15]));
-          break;
-        case 29:
-          elements[5][iVolume].push_back(new MHexahedron27(
-            cells[i][0], cells[i][1], cells[i][2], cells[i][3], cells[i][4],
-            cells[i][5], cells[i][6], cells[i][7], cells[i][8], cells[i][11],
-            cells[i][13], cells[i][9], cells[i][16], cells[i][18], cells[i][19],
-            cells[i][17], cells[i][10], cells[i][12], cells[i][14],
-            cells[i][15], cells[i][22], cells[i][23], cells[i][21],
-            cells[i][24], cells[i][20], cells[i][25], cells[i][26]));
-          break;
-        case 26:
-          elements[6][iVolume].push_back(
-            new MPrism15(cells[i][0], cells[i][1], cells[i][2], cells[i][3],
-                         cells[i][4], cells[i][5], cells[i][6], cells[i][9],
-                         cells[i][7], cells[i][12], cells[i][14], cells[i][13],
-                         cells[i][8], cells[i][10], cells[i][11]));
-          break;
-        case 32:
-          elements[6][iVolume].push_back(new MPrism18(
-            cells[i][0], cells[i][1], cells[i][2], cells[i][3], cells[i][4],
-            cells[i][5], cells[i][6], cells[i][9], cells[i][7], cells[i][12],
-            cells[i][14], cells[i][13], cells[i][8], cells[i][10], cells[i][11],
-            cells[i][15], cells[i][17], cells[i][16]));
-          break;
-        // high-order elements
-        // https://vtk.org/doc/nightly/html/vtkCellType_8h_source.html
-        case 68: // VTK_LAGRANGE_CURVE
-          elements[1][iCurve].push_back(new MLineN(cells[i]));
-          break;
-        case 69: // VTK_LAGRANGE_TRIANGLE
-          switch(numVerts) {
-          case 3: order = 1; break;
-          case 6: order = 2; break;
-          case 10: order = 3; break;
-          case 15: order = 4; break;
-          default: order = 1; break;
+        std::vector<int> &ints = cells[i];
+        std::vector<MVertex *> v;
+        if(type == 7) { // polygon
+          if(nodesAt(ints.data(), (int)ints.size(), v))
+            created[i] = new MPolygon(v);
+          continue;
+        }
+        if(type == 42) { // polyhedron: the number of faces, then for each face
+                         // its number of nodes and their indices
+          std::vector<MVertex *> fv;
+          std::vector<int> starts = {0};
+          std::size_t k = 1;
+          bool ok = !ints.empty();
+          for(int f = 0; ok && f < ints[0]; f++) {
+            ok = k < ints.size() && k + ints[k] < ints.size() + 1 &&
+                 nodesAt(&ints[k + 1], ints[k], fv);
+            if(!ok) break;
+            v.insert(v.end(), fv.begin(), fv.end());
+            starts.push_back((int)v.size());
+            k += 1 + ints[k];
           }
-          elements[2][iSurface].push_back(new MTriangleN(cells[i], order));
-          break;
-        case 71: // VTK_LAGRANGE_TETRAHEDRON
-          switch(numVerts) {
-          case 4: order = 1; break;
-          case 10: order = 2; break;
-          case 20: order = 3; break;
-          case 35: order = 4; break;
-          default: order = 1; break;
+          if(!ok || k != ints.size()) {
+            Msg::Error("Wrong polyhedron cell %zu", i);
+            continue;
           }
-          elements[4][iVolume].push_back(new MTetrahedronN(cells[i], order));
-          break;
-        default: Msg::Error("Unknown type of cell %d", type); break;
+          MPolyhedron *ph = new MPolyhedron(v);
+          ph->setPolygons(v, starts);
+          created[i] = ph;
+          continue;
+        }
+        // the element and its node ordering, as for the .vtu files
+        int numVerts = ints.size();
+        int mshType = getMSHTypeOfVTKXMLCell(type, numVerts);
+        if(!mshType) {
+          Msg::Error("Unknown type of cell %d (with %d nodes)", type, numVerts);
+          continue;
+        }
+        const vtkXMLCell &cell = getVTKXMLCell(mshType);
+        if(type == 72) {
+          // as VTK reads the Lagrange hexahedra of this version of the
+          // format: with the 11th and 12th edges swapped
+          int perEdge = ElementType::getOrder(mshType) - 1;
+          for(int k = 0; k < perEdge; k++)
+            std::swap(ints[8 + 10 * perEdge + k], ints[8 + 11 * perEdge + k]);
+        }
+        std::vector<MVertex *> w;
+        if(!nodesAt(ints.data(), numVerts, w)) continue;
+        v.resize(numVerts);
+        for(int k = 0; k < numVerts; k++) v[cell.nodes[k]] = w[k];
+        created[i] = factory.create(mshType, v);
+      }
+
+      // the physical groups, as Gmsh writes them: an entity per group
+      std::vector<int> ids;
+      int numComp = 0;
+      std::size_t numData = 0;
+      if(fscanf(fp, "%s %zu", buffer, &numData) == 2 &&
+         !strcmp(buffer, "CELL_DATA") && numData == cells.size() &&
+         fscanf(fp, "%s %s %s %d", buffer, buffer2, buffer, &numComp) == 4 &&
+         !strcmp(buffer2, "CellEntityIds") && !strcmp(buffer, "int") &&
+         numComp == 1 && fscanf(fp, "%s %s", buffer, buffer2) == 2) {
+        ids.resize(cells.size(), 0);
+        if(binary) {
+          skipToNextLine(fp);
+          if(fread(&ids[0], sizeof(int), ids.size(), fp) != ids.size())
+            ids.clear();
+          else if(!bigEndian)
+            SwapBytes((char *)&ids[0], sizeof(int), ids.size());
+        }
+        else {
+          for(auto &id : ids)
+            if(fscanf(fp, "%d", &id) != 1) id = 0;
+        }
+      }
+
+      for(std::size_t i = 0; i < cells.size(); i++) {
+        MElement *e = created[i];
+        if(!e) continue;
+        int id = (i < ids.size() && ids[i] > 0) ? ids[i] : 0;
+        int dim = e->getDim();
+        int tag = (dim == 0) ? iPoint++ :
+                  ((dim == 1) ? iCurve : (dim == 2) ? iSurface : iVolume) + id;
+        if(id) physicals[dim][tag][id] = "";
+        switch(e->getType()) {
+        case TYPE_PNT: elements[0][tag].push_back(e); break;
+        case TYPE_LIN: elements[1][tag].push_back(e); break;
+        case TYPE_TRI: elements[2][tag].push_back(e); break;
+        case TYPE_QUA: elements[3][tag].push_back(e); break;
+        case TYPE_TET: elements[4][tag].push_back(e); break;
+        case TYPE_HEX: elements[5][tag].push_back(e); break;
+        case TYPE_PRI: elements[6][tag].push_back(e); break;
+        case TYPE_PYR: elements[7][tag].push_back(e); break;
+        case TYPE_POLYG: elements[8][tag].push_back(e); break;
+        case TYPE_POLYH: elements[9][tag].push_back(e); break;
+        default: delete e; break;
         }
       }
     }
     else {
       for(std::size_t i = 0; i < cells.size(); i++) {
         int nbNodes = (int)cells[i].size();
+        std::vector<MVertex *> v;
+        if(!nodesAt(cells[i].data(), nbNodes, v)) continue;
         switch(nbNodes) {
-        case 1: elements[0][iPoint++].push_back(new MPoint(cells[i])); break;
-        case 2: elements[1][iCurve].push_back(new MLine(cells[i])); break;
-        case 3: elements[2][iSurface].push_back(new MTriangle(cells[i])); break;
-        case 4:
-          elements[3][iSurface].push_back(new MQuadrangle(cells[i]));
-          break;
-        default:
-          Msg::Error("Unknown type of mesh element with %d nodes", nbNodes);
-          break;
+        case 1: elements[0][iPoint++].push_back(new MPoint(v)); break;
+        case 2: elements[1][iCurve].push_back(new MLine(v)); break;
+        case 3: elements[2][iSurface].push_back(new MTriangle(v)); break;
+        case 4: elements[3][iSurface].push_back(new MQuadrangle(v)); break;
+        default: elements[8][iSurface].push_back(new MPolygon(v)); break;
         }
       }
     }

@@ -1,8 +1,9 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
+#include <algorithm>
 #include <vector>
 #include "GmshConfig.h"
 #include "GmshMessage.h"
@@ -15,11 +16,14 @@
 
 #if defined(HAVE_MESH)
 #include "meshGEdge.h"
+#include "GmshDefines.h"
 #endif
 
-discreteEdge::discreteEdge(GModel *model, int num, GVertex *_v0, GVertex *_v1)
+discreteEdge::discreteEdge(GModel *model, int num, GVertex *_v0, GVertex *_v1,
+                           bool geo)
   : GEdge(model, num, _v0, _v1)
 {
+  if(!geo) return;
   bool ok;
   Curve *c = CreateCurve(num, MSH_SEGM_DISCRETE, 0, nullptr, nullptr, -1, -1,
                          0., 1., ok);
@@ -27,8 +31,10 @@ discreteEdge::discreteEdge(GModel *model, int num, GVertex *_v0, GVertex *_v1)
   CreateReversedCurve(c);
 }
 
-discreteEdge::discreteEdge(GModel *model, int num) : GEdge(model, num)
+discreteEdge::discreteEdge(GModel *model, int num, bool geo)
+  : GEdge(model, num)
 {
+  if(!geo) return;
   bool ok;
   Curve *c = CreateCurve(num, MSH_SEGM_DISCRETE, 0, nullptr, nullptr, -1, -1,
                          0., 1., ok);
@@ -101,7 +107,8 @@ SPoint2 discreteEdge::reparamOnFace(const GFace *face, double epar,
 
 int discreteEdge::minimumMeshSegments() const
 {
-  return CTX::instance()->mesh.minCurveNodes;
+  return std::max(CTX::instance()->mesh.minCurveNodes,
+                  meshAttributes.minimumMeshSegments);
 }
 
 double discreteEdge::curvature(double par) const
@@ -156,6 +163,7 @@ Range<double> discreteEdge::parBounds(int i) const
 
 int discreteEdge::createGeometry()
 {
+  CTX::instance()->geomChanged();
   if(lines.empty()) return 0;
 
   if(!_discretization.empty()) return 0;

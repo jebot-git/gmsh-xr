@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -6,10 +6,13 @@
 #include <stdlib.h>
 #include <cmath>
 #include <limits>
+#include <atomic>
+#include <mutex>
 #include "GmshConfig.h"
 #include "GmshMessage.h"
 #include "GModel.h"
 #include "MElement.h"
+#include "VTKXML.h"
 #include "MPoint.h"
 #include "MLine.h"
 #include "MTriangle.h"
@@ -19,7 +22,8 @@
 #include "MPrism.h"
 #include "MPyramid.h"
 #include "MTrihedron.h"
-#include "MElementCut.h"
+#include "MPolygon.h"
+#include "MPolyhedron.h"
 #include "MSubElement.h"
 #include "GEntity.h"
 #include "StringUtils.h"
@@ -251,24 +255,53 @@ double MElement::maxEdge()
   return m;
 }
 
-double MElement::maxDistToStraight() const
+// the straight-sided shape functions at the high order nodes of the
+// reference element, computed once per type (one row per high order node,
+// one column per corner); null if the element has no high order node or no
+// straight-sided function space
+static const fullMatrix<double> *straightShapeFunctions(const MElement *ele)
 {
-  const nodalBasis *lagBasis = getFunctionSpace();
+  static std::atomic<const fullMatrix<double> *> cache[MSH_MAX_NUM + 1];
+  static std::mutex mutex;
+
+  int type = ele->getTypeForMSH();
+  if(type < 0 || type > MSH_MAX_NUM) return nullptr;
+  const fullMatrix<double> *sf = cache[type].load(std::memory_order_acquire);
+  if(sf) return sf;
+
+  std::lock_guard<std::mutex> lock(mutex);
+  sf = cache[type].load(std::memory_order_relaxed);
+  if(sf) return sf; // another thread got there first
+
+  const nodalBasis *lagBasis = ele->getFunctionSpace();
+  const nodalBasis *lagBasis1 = ele->getFunctionSpace(1);
+  if(!lagBasis || !lagBasis1) return nullptr;
   const fullMatrix<double> &uvw = lagBasis->points;
-  const int &nV = uvw.size1();
-  const int &dim = uvw.size2();
-  const nodalBasis *lagBasis1 = getFunctionSpace(1);
-  const int &nV1 = lagBasis1->points.size1();
-  std::vector<SPoint3> xyz1(nV1);
-  for(int iV = 0; iV < nV1; ++iV) xyz1[iV] = getVertex(iV)->point();
-  double maxdx = 0.;
+  int nV = uvw.size1(), dim = uvw.size2();
+  int nV1 = lagBasis1->points.size1();
+  fullMatrix<double> *m = new fullMatrix<double>(std::max(nV - nV1, 0), nV1);
   for(int iV = nV1; iV < nV; ++iV) {
     double f[256];
     lagBasis1->f(uvw(iV, 0), (dim > 1) ? uvw(iV, 1) : 0.,
                  (dim > 2) ? uvw(iV, 2) : 0., f);
+    for(int iSF = 0; iSF < nV1; ++iSF) (*m)(iV - nV1, iSF) = f[iSF];
+  }
+  cache[type].store(m, std::memory_order_release);
+  return m;
+}
+
+double MElement::maxDistToStraight() const
+{
+  const fullMatrix<double> *sf = straightShapeFunctions(this);
+  if(!sf || !sf->size1()) return 0.;
+  const int nV1 = sf->size2(), nHO = sf->size1();
+  std::vector<SPoint3> xyz1(nV1);
+  for(int iV = 0; iV < nV1; ++iV) xyz1[iV] = getVertex(iV)->point();
+  double maxdx = 0.;
+  for(int i = 0; i < nHO; ++i) {
     SPoint3 xyzS(0., 0., 0.);
-    for(int iSF = 0; iSF < nV1; ++iSF) xyzS += xyz1[iSF] * f[iSF];
-    SVector3 vec(xyzS, getVertex(iV)->point());
+    for(int iSF = 0; iSF < nV1; ++iSF) xyzS += xyz1[iSF] * (*sf)(i, iSF);
+    SVector3 vec(xyzS, getVertex(nV1 + i)->point());
     double dx = vec.norm();
     if(dx > maxdx) maxdx = dx;
   }
@@ -1367,7 +1400,7 @@ double MElement::integrateFlux(double val[], int face, int pOrder, int order)
 
 void MElement::writeMSH2(FILE *fp, double version, bool binary, int num,
                          int elementary, int physical, int parentNum,
-                         int dom1Num, int dom2Num, std::vector<short> *ghosts)
+                         std::vector<short> *ghosts)
 {
   int type = getTypeForMSH();
 
@@ -1375,34 +1408,6 @@ void MElement::writeMSH2(FILE *fp, double version, bool binary, int num,
 
   int n = getNumVerticesForMSH();
   int par = (parentNum) ? 1 : 0;
-  int dom = (dom1Num) ? 2 : 0;
-  bool poly = (type == MSH_POLYG_ || type == MSH_POLYH_ || type == MSH_POLYG_B);
-
-  // if polygon loop over children (triangles and tets)
-  if(CTX::instance()->mesh.saveTri) {
-    if(poly) {
-      for(int i = 0; i < getNumChildren(); i++) {
-        MElement *t = getChild(i);
-        t->writeMSH2(fp, version, binary, num++, elementary, physical, 0, 0, 0,
-                     ghosts);
-      }
-      return;
-    }
-    if(type == MSH_TRI_B) {
-      MTriangle *t = new MTriangle(getVertex(0), getVertex(1), getVertex(2));
-      t->writeMSH2(fp, version, binary, num++, elementary, physical, 0, 0, 0,
-                   ghosts);
-      delete t;
-      return;
-    }
-    if(type == MSH_LIN_B || type == MSH_LIN_C) {
-      MLine *l = new MLine(getVertex(0), getVertex(1));
-      l->writeMSH2(fp, version, binary, num++, elementary, physical, 0, 0, 0,
-                   ghosts);
-      delete l;
-      return;
-    }
-  }
 
   if(CTX::instance()->mesh.preserveNumberingMsh2) num = (int)_num;
 
@@ -1412,21 +1417,19 @@ void MElement::writeMSH2(FILE *fp, double version, bool binary, int num,
       fprintf(fp, " %d %d %d", abs(physical), elementary, n);
     else if(version < 2.2)
       fprintf(fp, " %d %d %d", abs(physical), elementary, _partition);
-    else if(!_partition && !par && !dom)
-      fprintf(fp, " %d %d %d", 2 + par + dom, abs(physical), elementary);
+    else if(!_partition && !par)
+      fprintf(fp, " %d %d %d", 2 + par, abs(physical), elementary);
     else if(!ghosts)
-      fprintf(fp, " %d %d %d 1 %d", 4 + par + dom, abs(physical), elementary,
+      fprintf(fp, " %d %d %d 1 %d", 4 + par, abs(physical), elementary,
               _partition);
     else {
       int numGhosts = ghosts->size();
-      fprintf(fp, " %d %d %d %d %d", 4 + numGhosts + par + dom, abs(physical),
+      fprintf(fp, " %d %d %d %d %d", 4 + numGhosts + par, abs(physical),
               elementary, 1 + numGhosts, _partition);
       for(std::size_t i = 0; i < ghosts->size(); i++)
         fprintf(fp, " %d", -(*ghosts)[i]);
     }
     if(version >= 2.0 && par) fprintf(fp, " %d", parentNum);
-    if(version >= 2.0 && dom) fprintf(fp, " %d %d", dom1Num, dom2Num);
-    if(version >= 2.0 && poly) fprintf(fp, " %d", n);
   }
   else {
     int numTags, numGhosts = 0;
@@ -1450,7 +1453,6 @@ void MElement::writeMSH2(FILE *fp, double version, bool binary, int num,
     if(ghosts)
       for(int i = 0; i < numGhosts; i++) blob[8 + i] = -(*ghosts)[i];
     if(par) blob[8 + numGhosts] = parentNum;
-    if(poly) Msg::Error("Unable to write polygons/polyhedra in binary files.");
     fwrite(blob, sizeof(int), 4 + numTags, fp);
   }
 
@@ -1686,24 +1688,99 @@ void MElement::writeTOCHNOG(FILE *fp, int num)
   fprintf(fp, "\n");
 }
 
+int MElement::getFaceCorners(int num, MVertex *v[4]) const
+{
+  MFace f = getFace(num);
+  int n = std::min((int)f.getNumVertices(), 4);
+  for(int i = 0; i < n; i++) v[i] = f.getVertex(i);
+  return n;
+}
+
+int MElement::getEdgeCorners(int num, MVertex *v[2]) const
+{
+  MEdge e = getEdge(num);
+  v[0] = e.getVertex(0);
+  v[1] = e.getVertex(1);
+  return 2;
+}
+
+// the ints of a polygon or polyhedron cell in the legacy VTK format: the
+// indices of the nodes of a polygon; for a polyhedron the number of faces,
+// then for each face its number of nodes and their indices
+static void polytopeVTKCell(const MElement *e, std::vector<int> &ints)
+{
+  ints.clear();
+  if(e->getType() == TYPE_POLYG) {
+    for(std::size_t i = 0; i < e->getNumPrimaryVertices(); i++)
+      ints.push_back((int)e->getVertex(i)->getIndex() - 1);
+  }
+  else {
+    const MPolyhedron *p = static_cast<const MPolyhedron *>(e);
+    ints.push_back(p->getNumPolygons());
+    for(int f = 0; f < p->getNumPolygons(); f++) {
+      ints.push_back(p->getPolygonStart(f + 1) - p->getPolygonStart(f));
+      for(int k = p->getPolygonStart(f); k < p->getPolygonStart(f + 1); k++)
+        ints.push_back((int)p->getPolygonVertex(k)->getIndex() - 1);
+    }
+  }
+}
+
+int MElement::getTypeForVTK() const
+{
+  if(getType() == TYPE_POLYG) return 7;
+  if(getType() == TYPE_POLYH) return 42;
+  return getVTKXMLCell(getTypeForMSH(), false).type;
+}
+
+// (for a polyhedron, the number of ints of its cell: see polytopeVTKCell())
+std::size_t MElement::getNumVerticesVTK() const
+{
+  if(getType() == TYPE_POLYG || getType() == TYPE_POLYH) {
+    std::vector<int> ints;
+    polytopeVTKCell(this, ints);
+    return ints.size();
+  }
+  return getVTKXMLCell(getTypeForMSH(), false).nodes.size();
+}
+
+MVertex *MElement::getVertexVTK(int num)
+{
+  // (ParaView's GmshReader plugin asks for all the nodes of the element,
+  // also when the cell has fewer)
+  const std::vector<int> &nodes = getVTKXMLCell(getTypeForMSH(), false).nodes;
+  return getVertex(num < (int)nodes.size() ? nodes[num] : num);
+}
+
 void MElement::writeVTK(FILE *fp, bool binary, bool bigEndian)
 {
-  if(!getTypeForVTK()) return;
-
-  int n = getNumVertices();
+  std::vector<int> ints;
+  if(getType() == TYPE_POLYG || getType() == TYPE_POLYH) {
+    polytopeVTKCell(this, ints);
+  }
+  else {
+    const vtkXMLCell &cell = getVTKXMLCell(getTypeForMSH());
+    if(!cell.type) return;
+    std::vector<int> nodes(cell.nodes);
+    if(cell.type == 72) {
+      // VTK reads the Lagrange hexahedra of the files of this version (as of
+      // the .vtu files older than 2.2) with the last two vertical edges, the
+      // 11th and 12th, swapped
+      int perEdge = getPolynomialOrder() - 1;
+      for(int i = 0; i < perEdge; i++)
+        std::swap(nodes[8 + 10 * perEdge + i], nodes[8 + 11 * perEdge + i]);
+    }
+    for(auto k : nodes) ints.push_back((int)getVertex(k)->getIndex() - 1);
+  }
+  int n = (int)ints.size();
   if(binary) {
-    int verts[60];
-    verts[0] = n;
-    for(int i = 0; i < n; i++)
-      verts[i + 1] = (int)getVertexVTK(i)->getIndex() - 1;
+    ints.insert(ints.begin(), n);
     // VTK always expects big endian binary data
-    if(!bigEndian) SwapBytes((char *)verts, sizeof(int), n + 1);
-    fwrite(verts, sizeof(int), n + 1, fp);
+    if(!bigEndian) SwapBytes((char *)&ints[0], sizeof(int), n + 1);
+    fwrite(&ints[0], sizeof(int), n + 1, fp);
   }
   else {
     fprintf(fp, "%d", n);
-    for(int i = 0; i < n; i++)
-      fprintf(fp, " %ld", getVertexVTK(i)->getIndex() - 1);
+    for(int i = 0; i < n; i++) fprintf(fp, " %d", ints[i]);
     fprintf(fp, "\n");
   }
 }
@@ -1758,7 +1835,7 @@ void MElement::writeUNV(FILE *fp, int num, int elementary, int physical)
     fprintf(fp, "%10ld", getVertexUNV(k)->getIndex());
     if(k % 8 == 7) fprintf(fp, "\n");
   }
-  if(n - 1 % 8 != 7) fprintf(fp, "\n");
+  if((n - 1) % 8 != 7) fprintf(fp, "\n");
 
   if(physical < 0) reverse();
 }
@@ -1787,7 +1864,7 @@ void MElement::writeNEU(FILE *fp, unsigned gambitType, int idAdjust, int phys)
 {
   if(phys < 0) reverse();
 
-  fprintf(fp, "%8lu %2d %2lu ", _num - idAdjust, gambitType, getNumVertices());
+  fprintf(fp, "%8lu %2d %2zu ", _num - idAdjust, gambitType, getNumVertices());
   for(std::size_t i = 0; i < getNumVertices(); ++i) {
     if(i == 7) fprintf(fp, "\n               ");
     fprintf(fp, "%8ld", getVertexNEU(i)->getIndex());
@@ -1845,11 +1922,11 @@ void MElement::writeBDF(FILE *fp, int format, int elementTagType,
     fprintf(fp, "\n");
   }
   else if(format == 1) { // small field format
-    fprintf(fp, "%-8s%-8lu%-8d", str, _num, tag);
+    fprintf(fp, "%-8s%-8zu%-8d", str, _num, tag);
     for(int i = 0; i < n; i++) {
       fprintf(fp, "%-8ld", getVertexBDF(i)->getIndex());
       if(i != n - 1 && !((i + 3) % 8)) {
-        fprintf(fp, "+%s%-6lu\n+%s%-6lu", cont[ncont], _num, cont[ncont], _num);
+        fprintf(fp, "+%s%-6zu\n+%s%-6zu", cont[ncont], _num, cont[ncont], _num);
         ncont++;
       }
     }
@@ -1858,7 +1935,7 @@ void MElement::writeBDF(FILE *fp, int format, int elementTagType,
     fprintf(fp, "\n");
   }
   else { // large field format
-    fprintf(fp, "%-8s%-8lu%-8d", str, _num, tag);
+    fprintf(fp, "%-8s%-8zu%-8d", str, _num, tag);
     for(int i = 0; i < n; i++) {
       fprintf(fp, "%-8ld", getVertexBDF(i)->getIndex());
       if(i != n - 1 && !((i + 3) % 8)) {
@@ -2046,7 +2123,7 @@ void MElement::writeRAD(FILE *fp, int num)
 void MElement::writeSU2(FILE *fp, int num)
 {
   fprintf(fp, "%d ", getTypeForVTK());
-  for(std::size_t i = 0; i < getNumVertices(); i++)
+  for(std::size_t i = 0; i < getNumVerticesVTK(); i++)
     fprintf(fp, "%ld ", getVertexVTK(i)->getIndex() - 1);
   if(num >= 0)
     fprintf(fp, "%d\n", num);
@@ -2093,12 +2170,6 @@ unsigned int MElement::getInfoMSH(const int typeMSH, const char **const name)
   case MSH_LIN_11:
     if(name) *name = "Line 11";
     return 2 + 9;
-  case MSH_LIN_B:
-    if(name) *name = "Line Border";
-    return 2;
-  case MSH_LIN_C:
-    if(name) *name = "Line Child";
-    return 2;
   case MSH_TRI_1:
     if(name) *name = "Triangle 1";
     return 1;
@@ -2156,9 +2227,6 @@ unsigned int MElement::getInfoMSH(const int typeMSH, const char **const name)
   case MSH_TRI_30:
     if(name) *name = "Triangle 30";
     return 3 + 27;
-  case MSH_TRI_B:
-    if(name) *name = "Triangle Border";
-    return 3;
   case MSH_QUA_1:
     if(name) *name = "Quadrilateral 1";
     return 1;
@@ -2221,9 +2289,6 @@ unsigned int MElement::getInfoMSH(const int typeMSH, const char **const name)
     return 40;
   case MSH_POLYG_:
     if(name) *name = "Polygon";
-    return 0;
-  case MSH_POLYG_B:
-    if(name) *name = "Polygon Border";
     return 0;
   case MSH_TET_1:
     if(name) *name = "Tetrahedron 1";
@@ -2465,7 +2530,7 @@ unsigned int MElement::getInfoMSH(const int typeMSH, const char **const name)
   default:
     Msg::Error("Unknown type of element %d", typeMSH);
     if(name) *name = "Unknown";
-    return -1;
+    return 0;
   }
 }
 
@@ -2484,10 +2549,8 @@ void MElement::getVerticesIdForMSH(std::vector<int> &verts)
 }
 
 MElement *MElement::copy(std::map<std::size_t, MVertex *> &vertexMap,
-                         std::map<MElement *, MElement *> &newParents,
-                         std::map<MElement *, MElement *> &newDomains)
+                         std::map<MElement *, MElement *> &newParents)
 {
-  if(newDomains.count(this)) return newDomains.find(this)->second;
   std::vector<MVertex *> vmv;
   int eType = getTypeForMSH();
   MElement *eParent = getParent();
@@ -2521,11 +2584,11 @@ MElement *MElement::copy(std::map<std::size_t, MVertex *> &vertexMap,
   }
 
   MElement *parent = nullptr;
-  if(eParent && !getDomain(0) && !getDomain(1)) {
+  if(eParent) {
     auto it = newParents.find(eParent);
     MElement *newParent;
     if(it == newParents.end()) {
-      newParent = eParent->copy(vertexMap, newParents, newDomains);
+      newParent = eParent->copy(vertexMap, newParents);
       newParents[eParent] = newParent;
     }
     else
@@ -2534,29 +2597,12 @@ MElement *MElement::copy(std::map<std::size_t, MVertex *> &vertexMap,
   }
 
   MElementFactory f;
-  MElement *newEl =
-    f.create(eType, vmv, getNum(), _partition, ownsParent(), 0, parent);
-
-  for(int i = 0; i < 2; i++) {
-    MElement *dom = getDomain(i);
-    if(!dom) continue;
-    auto it = newDomains.find(dom);
-    MElement *newDom;
-    if(it == newDomains.end()) {
-      newDom = dom->copy(vertexMap, newParents, newDomains);
-      newDomains[dom] = newDom;
-    }
-    else
-      newDom = newDomains.find(dom)->second;
-    newEl->setDomain(newDom, i);
-  }
-  return newEl;
+  return f.create(eType, vmv, getNum(), _partition, ownsParent(), 0, parent);
 }
 
 MElement *MElementFactory::create(int type, std::vector<MVertex *> &v,
                                   std::size_t num, int part, bool owner,
-                                  int parent, MElement *parent_ptr,
-                                  MElement *d1, MElement *d2)
+                                  int parent, MElement *parent_ptr)
 {
   switch(type) {
   case MSH_PNT: return new MPoint(v, num, part);
@@ -2570,8 +2616,6 @@ MElement *MElementFactory::create(int type, std::vector<MVertex *> &v,
   case MSH_LIN_9: return new MLineN(v, num, part);
   case MSH_LIN_10: return new MLineN(v, num, part);
   case MSH_LIN_11: return new MLineN(v, num, part);
-  case MSH_LIN_B: return new MLineBorder(v, num, part, d1, d2);
-  case MSH_LIN_C: return new MLineChild(v, num, part, owner, parent_ptr);
   case MSH_TRI_3: return new MTriangle(v, num, part);
   case MSH_TRI_6: return new MTriangle6(v, num, part);
   case MSH_TRI_10: return new MTriangleN(v, 3, num, part);
@@ -2590,7 +2634,6 @@ MElement *MElementFactory::create(int type, std::vector<MVertex *> &v,
   case MSH_TRI_24: return new MTriangleN(v, 8, num, part);
   case MSH_TRI_27: return new MTriangleN(v, 9, num, part);
   case MSH_TRI_30: return new MTriangleN(v, 10, num, part);
-  case MSH_TRI_B: return new MTriangleBorder(v, num, part, d1, d2);
   case MSH_QUA_4: return new MQuadrangle(v, num, part);
   case MSH_QUA_9: return new MQuadrangle9(v, num, part);
   case MSH_QUA_16: return new MQuadrangleN(v, 3, num, part);
@@ -2610,8 +2653,7 @@ MElement *MElementFactory::create(int type, std::vector<MVertex *> &v,
   case MSH_QUA_32: return new MQuadrangleN(v, 8, num, part);
   case MSH_QUA_36I: return new MQuadrangleN(v, 9, num, part);
   case MSH_QUA_40: return new MQuadrangleN(v, 10, num, part);
-  case MSH_POLYG_: return new MPolygon(v, num, part, owner, parent_ptr);
-  case MSH_POLYG_B: return new MPolygonBorder(v, num, part, d1, d2);
+  case MSH_POLYG_: return new MPolygon(v, num, part);
   case MSH_TET_4: return new MTetrahedron(v, num, part);
   case MSH_TET_10: return new MTetrahedron10(v, num, part);
   case MSH_HEX_8: return new MHexahedron(v, num, part);
@@ -2651,7 +2693,7 @@ MElement *MElementFactory::create(int type, std::vector<MVertex *> &v,
   case MSH_TET_46: return new MTetrahedronN(v, 8, num, part);
   case MSH_TET_52: return new MTetrahedronN(v, 9, num, part);
   case MSH_TET_58: return new MTetrahedronN(v, 10, num, part);
-  case MSH_POLYH_: return new MPolyhedron(v, num, part, owner, parent_ptr);
+  case MSH_POLYH_: return new MPolyhedron(v, num, part);
   case MSH_HEX_32: return new MHexahedronN(v, 3, num, part);
   case MSH_HEX_64: return new MHexahedronN(v, 3, num, part);
   case MSH_HEX_125: return new MHexahedronN(v, 4, num, part);

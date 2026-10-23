@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -67,6 +67,10 @@ public: // these will become protected at some point
 
   // the vertex arrays to draw the mesh of the entity efficiently
   VertexArray *va_lines, *va_triangles;
+  // what the clipping planes add, kept apart so that moving a plane does not
+  // rebuild the arrays above: the section they cut (capping), or the cut
+  // elements drawn whole (whole element mode)
+  VertexArray *va_clip_lines, *va_clip_triangles;
 
   // the set of high-order elements fixed by the "fast curving" boundary layer
   // optimization
@@ -126,7 +130,9 @@ public:
     PartitionVolume,
     GhostCurve,
     GhostSurface,
-    GhostVolume
+    GhostVolume,
+    OverlapSurface,
+    OverlapVolume,
   };
 
   // the mesh generation status
@@ -174,7 +180,9 @@ public:
       "Partition volume",
       "Ghost curve",
       "Ghost surface",
-      "Ghost volume"};
+      "Ghost volume",
+      "Overlap surface",
+      "Overlap volume"};
     unsigned int type = (unsigned int)geomType();
     if(type >= sizeof(name) / sizeof(name[0]))
       return "Undefined";
@@ -184,7 +192,7 @@ public:
 
   GEntity(GModel *m, int t);
 
-  virtual ~GEntity() {}
+  virtual ~GEntity();
 
   // mesh generation of the entity
   virtual void mesh(bool verbose) {}
@@ -197,6 +205,8 @@ public:
 
   // delete the geometry vertex arrays, used to to draw the geometry efficiently
   virtual void deleteGeometryVertexArrays() {}
+  // throw away only what the planes add, which is rebuilt on its own
+  void deleteClipVertexArrays();
 
   // spatial dimension of the entity
   virtual int dim() const { return -1; }
@@ -219,6 +229,8 @@ public:
     static std::vector<GEdge *> i;
     return i;
   }
+
+  virtual std::vector<GEntity *> boundaryEntities() const = 0;
 
   // vertices that bound this entity
   virtual std::vector<GVertex *> vertices() const
@@ -245,7 +257,9 @@ public:
 
   // properties of the underlying geometric representation of this entity
   virtual void geomProperties(std::vector<int> &integers,
-                              std::vector<double> &reals) const { }
+                              std::vector<double> &reals) const
+  {
+  }
 
   // true if parametric space is continuous in the "dim" direction
   virtual bool continuous(int dim) const { return true; }
@@ -302,7 +316,11 @@ public:
   void setMeshMaster(GEntity *);
   void setMeshMaster(GEntity *, const std::vector<double> &,
                      bool updateCorrespondingVertices = true);
-  void updateCorrespondingVertices();
+  // match the nodes with those of the master through the affine transform,
+  // and move them onto the images of their master nodes; if tolerance >= 0,
+  // do nothing and return false if a node is farther than tolerance from the
+  // image of its closest master node
+  bool updateCorrespondingVertices(double tolerance = -1.);
   void copyMasterCoordinates();
   virtual void alignElementsWithMaster() {}
 
@@ -314,21 +332,32 @@ public:
 
   // get/set the visibility flag
   virtual char getVisibility();
-  virtual void setVisibility(char val, bool recursive = false)
-  {
-    _visible = val;
-  }
+  // (sets CTX::entityVisibilityChanged)
+  virtual void setVisibility(char val, bool recursive = false);
+
+  // What the selection flag holds: nothing, an entity the user has chosen,
+  // one chosen and drawn with its marker and label, or one the cursor is
+  // merely resting on, which is drawn in the highlight colour and undone by
+  // a move of the mouse (General.MouseHoverHighlight).
+  enum SelectionState {
+    SelectNone = 0,
+    SelectOn = 1,
+    SelectShow = 2,
+    SelectHover = 3
+  };
 
   // get/set the selection flag
   virtual char getSelection() { return _selection; }
-  virtual void setSelection(char val) { _selection = val; }
+  virtual void setSelection(char val);
+  // how many entities are selected, and which, so that the drawing code can
+  // ask, and draw them, without walking them all
+  static int numSelected;
+  static std::set<GEntity *> selected;
 
   // get/set the color
   virtual unsigned int getColor() { return _color; }
-  virtual void setColor(unsigned color, bool recursive = false)
-  {
-    _color = color;
-  }
+  // (sets CTX::entityColorsChanged)
+  virtual void setColor(unsigned color, bool recursive = false);
 
   // return true if we should use this color to represent the entity
   virtual bool useColor();
@@ -382,10 +411,7 @@ public:
   {
     return _onlySomeElementsVisible ? true : false;
   }
-  void setOnlySomeElementsVisible(bool val)
-  {
-    _onlySomeElementsVisible = val ? 1 : 0;
-  }
+  void setOnlySomeElementsVisible(bool val);
 
   // get the number of mesh vertices in the entity
   std::size_t getNumMeshVertices() { return mesh_vertices.size(); }
@@ -393,23 +419,35 @@ public:
   // get the mesh vertex at the given index
   MVertex *getMeshVertex(std::size_t index) { return mesh_vertices[index]; }
 
+  // iterate over the mesh vertices
+  std::vector<MVertex *>::const_iterator getMeshVertexBegin() const
+  {
+    return mesh_vertices.begin();
+  }
+  std::vector<MVertex *>::const_iterator getMeshVertexEnd() const
+  {
+    return mesh_vertices.end();
+  }
+
   // add a mesh vertex
   void addMeshVertex(MVertex *v) { mesh_vertices.push_back(v); }
   // remove a mesh vertex, and delete it as well if del=true (warning: this does
   // not invalidate the mesh cache and vertex arrays, which should be taken care
   // of after a delete)
-  void removeMeshVertex(MVertex *v, bool del=false);
+  void removeMeshVertex(MVertex *v, bool del = false);
 
   // add a mesh element
   virtual void addElement(MElement *e) {}
   // remove an element or all the elements, and delete as well if del=true
   // (warning: this does not invalidate the mesh cache and vertex arrays, which
   // should be taken care of after a delete)
-  virtual void removeElement(MElement *e, bool del=false) {}
-  virtual void removeElements(bool del=false) {}
+  virtual void removeElement(MElement *e, bool del = false) {}
+  virtual void removeElements(bool del = false) {}
 
   // relocate mesh vertices using their parametric coordinates
-  virtual void relocateMeshVertices() {}
+  virtual void relocateMeshVertices
+    (const std::vector<double> &pmin = std::vector<double>(),
+     const std::vector<double> &pmax = std::vector<double>()) {}
 
   // clean downcasts
   GVertex *cast2Vertex();
@@ -441,6 +479,10 @@ struct GEntityPtrLessThan {
   {
     return ent1->tag() < ent2->tag();
   }
+  // lookup by tag, without creating a temporary entity
+  using is_transparent = void;
+  bool operator()(const GEntity *ent, int tag) const { return ent->tag() < tag; }
+  bool operator()(int tag, const GEntity *ent) const { return tag < ent->tag(); }
 };
 
 struct GEntityPtrFullLessThan {

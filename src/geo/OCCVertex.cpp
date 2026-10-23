@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -15,6 +15,8 @@
 
 #include "GModelIO_OCC.h"
 #include <gp_Pnt.hxx>
+#include "GmshDefines.h"
+#include "Context.h"
 
 OCCVertex::OCCVertex(GModel *m, TopoDS_Vertex v, int num, double lc)
   : GVertex(m, num, lc), _v(v)
@@ -27,6 +29,7 @@ OCCVertex::OCCVertex(GModel *m, TopoDS_Vertex v, int num, double lc)
 
 void OCCVertex::setPosition(GPoint &p)
 {
+  CTX::instance()->geomChanged();
   _x = p.x();
   _y = p.y();
   _z = p.z();

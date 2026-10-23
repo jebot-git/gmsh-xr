@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -100,6 +100,11 @@ public:
   // edges that bound the face
   int delEdge(GEdge *edge);
   virtual std::vector<GEdge *> const &edges() const { return l_edges; }
+  virtual std::vector<GEntity *> boundaryEntities() const
+  {
+    std::vector<GEntity *> entities(l_edges.begin(), l_edges.end());
+    return entities;
+  }
   virtual std::vector<int> const &edgeOrientations() const { return l_dirs; }
   void set(const std::vector<GEdge *> &f) { l_edges = f; }
   void setOrientations(const std::vector<int> &f) { l_dirs = f; }
@@ -118,6 +123,9 @@ public:
 
   void setBoundEdges(const std::vector<int> &tagEdges);
   void setBoundEdges(const std::vector<int> &tagEdges,
+                     const std::vector<int> &signEdges);
+  // (the curves themselves, for a reader that has found them)
+  void setBoundEdges(const std::vector<GEdge *> &edges,
                      const std::vector<int> &signEdges);
 
   // check if the surface mesh is planar in which case the normal is given
@@ -271,7 +279,6 @@ public:
   // get total/by-type number of elements in the mesh
   std::size_t getNumMeshElements() const;
   std::size_t getNumMeshElementsByType(const int familyType) const;
-  std::size_t getNumMeshParentElements();
   void getNumMeshElements(unsigned *const c) const;
 
   // get the start of the array of a type of element
@@ -351,6 +358,7 @@ public:
   struct {
     mutable GEntity::MeshGenerationStatus status;
     bool refineAllEdges;
+    int nbRefineAllEdges;
     double worst_element_shape, best_element_shape, average_element_shape;
     double smallest_edge_length, longest_edge_length, efficiency_index;
     int nbEdge, nbTriangle;
@@ -380,7 +388,9 @@ public:
   std::set<MVertex *> constr_vertices;
 
   // relocate mesh vertices using parametric coordinates
-  void relocateMeshVertices();
+  void relocateMeshVertices
+    (const std::vector<double> &pmin = std::vector<double>(),
+     const std::vector<double> &pmax = std::vector<double>());
 
   std::vector<MTriangle *> triangles;
   std::vector<MQuadrangle *> quadrangles;

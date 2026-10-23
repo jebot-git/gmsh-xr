@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -59,6 +59,8 @@ int GmshFLTK(int argc = 0, char **argv = nullptr);
 #else
 #define GMSH_API __declspec(dllimport)
 #endif
+#elif defined(__EMSCRIPTEN__)
+#define GMSH_API __attribute__ ((used, visibility("default")))
 #elif defined(__GNUC__)
 #define GMSH_API __attribute__ ((visibility("default")))
 #else

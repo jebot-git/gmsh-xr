@@ -1,8 +1,9 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
 
+#include <algorithm>
 #include "Numeric.h"
 
 static void affect(double *xi, double *yi, double *zi, int i, double *xp,
@@ -172,6 +173,112 @@ int IsoSimplex(double *X, double *Y, double *Z, double *Val, double V,
     n[2] = -n[2];
   }
 
+  return nb;
+}
+
+void OrderPolygonInPlane(int nb, const double n[3], double *Xp, double *Yp,
+                         double *Zp, double *Vp)
+{
+  if(nb < 3) return;
+
+  double c[3] = {0., 0., 0.};
+  for(int i = 0; i < nb; i++) {
+    c[0] += Xp[i];
+    c[1] += Yp[i];
+    c[2] += Zp[i];
+  }
+  for(int i = 0; i < 3; i++) c[i] /= nb;
+
+  // any two directions of the plane will do: the sense is fixed below
+  double u[3] = {1., 0., 0.};
+  if(fabs(n[0]) > fabs(n[1])) {
+    u[0] = 0.;
+    u[1] = 1.;
+  }
+  double m[3] = {n[0], n[1], n[2]}, w[3];
+  prodve(m, u, w);
+  norme(w);
+  prodve(w, m, u);
+  norme(u);
+
+  double a[12];
+  for(int i = 0; i < nb && i < 12; i++) {
+    double d[3] = {Xp[i] - c[0], Yp[i] - c[1], Zp[i] - c[2]};
+    a[i] = atan2(prosca(d, w), prosca(d, u));
+  }
+
+  for(int i = 1; i < nb; i++)
+    for(int j = i; j > 0 && a[j] < a[j - 1]; j--) {
+      std::swap(a[j], a[j - 1]);
+      std::swap(Xp[j], Xp[j - 1]);
+      std::swap(Yp[j], Yp[j - 1]);
+      std::swap(Zp[j], Zp[j - 1]);
+      if(Vp) std::swap(Vp[j], Vp[j - 1]);
+    }
+}
+
+static int cutEdgeByPlane(double *X, double *Y, double *Z, double *Val,
+                          double *D, int i1, int i2, double *Xp, double *Yp,
+                          double *Zp, double *Vp, int nb)
+{
+  if((D[i1] < 0. && D[i2] < 0.) || (D[i1] > 0. && D[i2] > 0.)) return nb;
+  double t = (D[i1] == D[i2]) ? 0. : D[i1] / (D[i1] - D[i2]);
+  Xp[nb] = X[i1] + t * (X[i2] - X[i1]);
+  Yp[nb] = Y[i1] + t * (Y[i2] - Y[i1]);
+  Zp[nb] = Z[i1] + t * (Z[i2] - Z[i1]);
+  if(Val) Vp[nb] = Val[i1] + t * (Val[i2] - Val[i1]);
+  return nb + 1;
+}
+
+int CutSimplexByPlane(double *X, double *Y, double *Z, double *Val, double *D,
+                      const double n[3], double *Xp, double *Yp, double *Zp,
+                      double *Vp)
+{
+  // a plane through a node or along an edge crosses several edges at the same
+  // point, up to 6 points in all: they are gathered here, not in the arrays
+  // of the caller, which hold the 4 corners a section can have
+  double x[6], y[6], z[6], v[6];
+  int nb = 0;
+  nb = cutEdgeByPlane(X, Y, Z, Val, D, 0, 1, x, y, z, v, nb);
+  nb = cutEdgeByPlane(X, Y, Z, Val, D, 0, 2, x, y, z, v, nb);
+  nb = cutEdgeByPlane(X, Y, Z, Val, D, 0, 3, x, y, z, v, nb);
+  nb = cutEdgeByPlane(X, Y, Z, Val, D, 1, 2, x, y, z, v, nb);
+  nb = cutEdgeByPlane(X, Y, Z, Val, D, 1, 3, x, y, z, v, nb);
+  nb = cutEdgeByPlane(X, Y, Z, Val, D, 2, 3, x, y, z, v, nb);
+
+  // keep each corner once, whatever their number (4 points can hold the same
+  // one twice); the tolerance is relative to the size of the simplex
+  double size = 0.;
+  for(int i = 1; i < 4; i++)
+    size = std::max(size, fabs(X[i] - X[0]) + fabs(Y[i] - Y[0]) +
+                            fabs(Z[i] - Z[0]));
+  double tol = 1.e-10 * size;
+  int ni = 0;
+  for(int j = 0; j < nb; j++) {
+    bool same = false;
+    for(int i = 0; i < ni && !same; i++)
+      same = (fabs(x[j] - x[i]) <= tol && fabs(y[j] - y[i]) <= tol &&
+              fabs(z[j] - z[i]) <= tol);
+    if(same) continue;
+    x[ni] = x[j];
+    y[ni] = y[j];
+    z[ni] = z[j];
+    if(Val) v[ni] = v[j];
+    ni++;
+  }
+  nb = ni;
+  if(nb < 3 || nb > 4) return 0;
+
+  // counter-clockwise as seen from the side n points to: the order of the
+  // edges says nothing once corners were merged
+  OrderPolygonInPlane(nb, n, x, y, z, Val ? v : nullptr);
+
+  for(int i = 0; i < nb; i++) {
+    Xp[i] = x[i];
+    Yp[i] = y[i];
+    Zp[i] = z[i];
+    if(Val) Vp[i] = v[i];
+  }
   return nb;
 }
 

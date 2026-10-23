@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -9,18 +9,26 @@
 #include <vector>
 #include <map>
 #include <string>
+#include "GmshDefines.h"
 
 #define NUM_SOLVERS 10
 
 class GamePad;
 
 struct contextMeshOptions {
+  // what the transparency is applied to: 0 filled surfaces only, 1
+  // everything
+  int transparencyMode;
+  // multiplies the alpha of every mesh colour
+  double transparency;
   // mesh algorithms
   int optimize, optimizeNetgen, refineSteps;
   double optimizePyramids;
   int smoothCrossField, crossFieldClosestPoint;
   double lcFactor, randFactor, randFactor3d, lcIntegrationPrecision;
   double optimizeThreshold, normals, tangents, explode, angleSmoothNormals;
+  double optimizeReconnectionThreshold;
+  int optimizeReconnectionPoints, optimizeReconnectionSearch;
   double allowSwapEdgeAngle;
   double qualityInf, qualitySup, radiusInf, radiusSup;
   double lcMin, lcMax, toleranceEdgeLength, toleranceInitialDelaunay;
@@ -28,6 +36,7 @@ struct contextMeshOptions {
   int lcFromPoints, lcFromParametricPoints, lcFromCurvature, lcFromCurvatureIso;
   int lcExtendFromBoundary, checkSurfaceNormalValidity;
   int nbSmoothing, algo2d, algo3d, algoSubdivide, algoSwitchOnFailure;
+  int mmg3dCombineDomains;
   int algoRecombine, recombineAll, recombineOptimizeTopology;
   int recombineNodeRepositioning;
   double recombineMinimumQuality;
@@ -43,7 +52,9 @@ struct contextMeshOptions {
   int hoCurveOuterBL;
   double hoMaxRho, hoMaxAngle, hoMaxInnerAngle;
   int NewtonConvergenceTestXYZ, maxIterDelaunay3D;
+  int flatRefine2D, flatRefine3D, flatOptimize3D;
   int ignorePeriodicityMsh2, ignoreParametrizationMsh4, ignoreUnknownSections;
+  int ignoreEdges, ignoreFaces;
   int boundaryLayerFanElements;
   int maxNumThreads1D, maxNumThreads2D, maxNumThreads3D;
   double angleToleranceFacetOverlap, toleranceReferenceElement;
@@ -59,7 +70,7 @@ struct contextMeshOptions {
   int fileFormat, firstElementTag, firstNodeTag;
   double mshFileVersion, medFileMinorVersion, scalingFactor;
   int medImportGroupsOfNodes, medSingleModel;
-  int saveAll, saveTri, saveGroupsOfNodes, saveGroupsOfElements;
+  int saveAll, saveViews, saveGroupsOfNodes, saveGroupsOfElements;
   int readGroupsOfElements;
   int binary, bdfFieldFormat;
   int unvStrictFormat, stlRemoveBadTriangles, stlOneSolidPerSurface;
@@ -70,9 +81,10 @@ struct contextMeshOptions {
   int cgnsImportIgnoreBC, cgnsImportIgnoreSolution, cgnsImportOrder;
   int cgnsConstructTopology, cgnsExportCPEX0045, cgnsExportStructured;
   int preserveNumberingMsh2, createTopologyMsh2;
+  int createEdges, createFaces;
   // partitioning
   int numPartitions, partitionCreateTopology, partitionCreateGhostCells;
-  int partitionCreatePhysicals, partitionSplitMeshFiles;
+  int partitionCreatePhysicals, partitionSplitMeshFiles, partitionSplitLocalBrep;
   int partitionSaveTopologyFile, partitionTriWeight, partitionQuaWeight;
   int partitionTetWeight, partitionHexWeight, partitionLinWeight;
   int partitionPriWeight, partitionPyrWeight, partitionTrihWeight;
@@ -80,14 +92,21 @@ struct contextMeshOptions {
   int metisAlgorithm, metisEdgeMatching, metisRefinementAlgorithm;
   int metisObjective, metisMinConn;
   double metisMaxLoadImbalance;
+  int overlapLayers;
   // mesh display
-  int draw, changed, light, lightTwoSide, lightLines, nodeType;
+  // how many times the mesh of each dimension has changed (see
+  // CTX::meshChanged())
+  int stamp[4];
+  int draw, light, lightTwoSide, lightLines, nodeType;
   int nodes, lines, triangles, quadrangles, tetrahedra, hexahedra, prisms;
-  int pyramids, trihedra;
+  int pyramids, trihedra, polygons, polyhedra;
   int surfaceEdges, surfaceFaces, volumeEdges, volumeFaces, numSubEdges;
-  int nodeLabels, lineLabels, surfaceLabels, volumeLabels, qualityType, labelType;
+  int nodeLabels, lineLabels, surfaceLabels, volumeLabels, qualityType;
+  int labelType;
   double nodeSize, lineWidth;
-  int dual, voronoi, drawSkinOnly, colorCarousel, labelSampling;
+  int dual, voronoi, drawSkinOnly, drawSkinEdgesOnly, colorCarousel;
+  int labelSampling;
+  int drawUniqueEdges;
   int smoothNormals, clip;
   // records cpu times for 1D, 2D and 3D mesh generation
   double timer[3];
@@ -96,6 +115,14 @@ struct contextMeshOptions {
 };
 
 struct contextGeometryOptions {
+  // how many times the geometry of each dimension has changed (see
+  // CTX::geomChanged())
+  int stamp[4];
+  // what the transparency is applied to: 0 filled surfaces only, 1
+  // everything
+  int transparencyMode;
+  // multiplies the alpha of every geometry colour
+  double transparency;
   // geometry algorithms
   int oldCircle, oldNewreg, oldRuledSurface;
   int extrudeSplinePoints, extrudeReturnLateral;
@@ -107,9 +134,10 @@ struct contextGeometryOptions {
   int occFixDegenerated, occFixSmallEdges, occFixSmallFaces;
   int occSewFaces, occMakeSolids, occParallel;
   int occBoundsUseSTL, occDisableSTL, occImportLabels, occExportOnlyVisible;
+  int occWriteParametricCurves, occWriteSTEPNonManifold;
   int occBooleanCheckInverted, occBooleanGlue, occBooleanNonDestructive;
   int occBooleanPreserveNumbering, occBooleanSimplify;
-  int occThruSectionsDegree, occUseGenericClosestPoint;
+  int occThruSectionsDegree, occUseGenericClosestPoint, occFastProjection;
   int occBrepFormatVersion;
   double occScaling;
   std::string occTargetUnit;
@@ -151,12 +179,45 @@ struct contextGeometryOptions {
 class CTX {
 private:
   static CTX *_instance;
+  static CTX *_create();
 
 public:
   CTX();
   ~CTX();
   void init();
-  static CTX *instance();
+  // called in tight loops in the drawing code: common path inline
+  static CTX *instance() { return _instance ? _instance : _create(); }
+
+  // What is drawn is kept between frames, and rebuilt when what it was built
+  // from changes. The code that changes it says so - the mesh or the geometry
+  // of some dimensions (ENT_* bits), the colours or the visibility of the
+  // entities (for the mesh and the geometry alike) - which bumps a stamp;
+  // what is kept records the stamps it was built with, and compares them
+  // with the current ones (as it records the values of the options it reads
+  // besides). Every reader (the mesh, the geometry, a picking pass, another
+  // window) sees every change: none is cleared by the one that sees it.
+  int entityColorsStamp, entityVisibilityStamp;
+  void meshChanged(int ents = ENT_ALL)
+  {
+    meshOptionsChanged(ents);
+    meshContentStamp++;
+  }
+  // an option changed the way the mesh is drawn, not the mesh: what only
+  // depends on the elements (the skin of a volume, which also records the
+  // options it reads) is kept
+  void meshOptionsChanged(int ents = ENT_ALL)
+  {
+    for(int d = 0; d < 4; d++)
+      if(ents & (1 << d)) mesh.stamp[d]++;
+  }
+  int meshContentStamp;
+  void geomChanged(int ents = ENT_ALL)
+  {
+    for(int d = 0; d < 4; d++)
+      if(ents & (1 << d)) geom.stamp[d]++;
+  }
+  void entityColorsChanged() { entityColorsStamp++; }
+  void entityVisibilityChanged() { entityVisibilityStamp++; }
 
   // for debug purposes only, i.e. JF and CG personal use
   int debugSurface;
@@ -193,6 +254,9 @@ public:
   int terminal;
   // number of threads (0 == use system default)
   int numThreads;
+  // how many threads a loop over num items runs on: General.NumThreads (all
+  // there are if 0), or 1 if there are fewer items than are worth it
+  int numThreadsFor(std::size_t num, std::size_t worthIt) const;
   // detached processes (WIN32)?
   int detachedProcess;
   // number of graphical windows/tiles
@@ -208,13 +272,12 @@ public:
   // enable input field scrolling (moving the mouse to change numbers)
   int inputScrolling;
   // position and size of various windows in the GUI
-  int glPosition[2], glSize[2], msgSize, menuPosition[2], menuSize[2],
-    detachedMenu;
-  int optPosition[2], visPosition[2], hotPosition[2], clipPosition[2],
-    manipPosition[2];
-  int statPosition[2], ctxPosition[2];
-  int pluginPosition[2], pluginSize[2], fieldPosition[2], fieldSize[2];
-  int fileChooserPosition[2], extraPosition[2], extraSize[2];
+  int glPosition[2], glSize[2], msgSize, menuSize[2], detachedMenu;
+  // positions of the other windows, relative to the graphic window
+  int menuOffset[2], optOffset[2], visOffset[2], hotOffset[2], clipOffset[2],
+    manipOffset[2], statOffset[2], ctxOffset[2];
+  int pluginOffset[2], pluginSize[2], fieldOffset[2], fieldSize[2];
+  int fileChooserOffset[2], extraOffset[2], extraSize[2];
   // use the system menu bar on macOS?
   int systemMenuBar;
   // use the native file chooser?
@@ -272,7 +335,7 @@ public:
   int smallAxes, smallAxesSize, smallAxesPos[2];
   // large axes options
   int axes, axesAutoPosition, axesMikado, axesForceValue;
-  double axesPosition[6], axesValue[6], axesTics[3];
+  double axesPosition[6], axesValue[6], axesTicks[3];
   std::string axesLabel[3], axesFormat[3];
   // simple dynamic lock (should be a mutex)
   int lock;
@@ -302,6 +365,75 @@ public:
   // clipping plane options
   double clipPlane[6][4];
   int clipWholeElements, clipOnlyDrawIntersectingVolume, clipOnlyVolume;
+  // fill the section cut by the clipping planes in 3D meshes and views
+  int clipCapping;
+  // Which kinds of element are drawn, for the key of an array kept between
+  // frames: in one place, and so in one order, for every cache that holds
+  // elements of several kinds.
+  void addElementTypesToKey(std::vector<double> &key) const
+  {
+    key.push_back(mesh.triangles);
+    key.push_back(mesh.quadrangles);
+    key.push_back(mesh.polygons);
+    key.push_back(mesh.tetrahedra);
+    key.push_back(mesh.hexahedra);
+    key.push_back(mesh.prisms);
+    key.push_back(mesh.pyramids);
+    key.push_back(mesh.trihedra);
+    key.push_back(mesh.polyhedra);
+  }
+  std::vector<double> elementTypesKey() const
+  {
+    std::vector<double> key;
+    addElementTypesToKey(key);
+    return key;
+  }
+  // What the planes add to the key of an array kept between frames: the modes
+  // the clipping window sets directly (they never mark the mesh as changed)
+  // and the planes themselves. In one place, so that a mode added to the
+  // group is not forgotten by one of the caches.
+  // (mask: the planes that apply, a bit each, the others being left out)
+  void addClipToKey(std::vector<double> &key, int mask = 63) const
+  {
+    key.push_back(mask);
+    key.push_back(clipCapping);
+    key.push_back(clipWholeElements);
+    key.push_back(clipOnlyVolume);
+    key.push_back(clipOnlyDrawIntersectingVolume);
+    for(int i = 0; i < 6; i++)
+      if(mask & (1 << i))
+        for(int j = 0; j < 4; j++) key.push_back(clipPlane[i][j]);
+  }
+  std::vector<double> clipKey(int mask) const
+  {
+    std::vector<double> key;
+    addClipToKey(key, mask);
+    return key;
+  }
+  // draw the vertex arrays from OpenGL buffer objects instead of client memory
+  int vertexBufferObjects;
+  // draw with the shader pipeline instead of the fixed function one
+  // (recreates the OpenGL context)
+  int shaders;
+  // lighting model of the shader pipeline: 0 the fixed function one, 1 to 3
+  // studio (linear light, hemisphere ambient, soft key light, no specular,
+  // shadows) with the floor normal to x, y or z
+  int shading;
+  // a factor on the light of the lit surfaces, in either shading
+  double brightness;
+  // angular radius (degrees) of the studio light, which sets the softness of
+  // its shadow, the offset of the floor from the bottom of the model along
+  // its normal (relative to the size of the bounds), and the number of
+  // frames accumulated while the view is still, and how dark the shadows
+  // are (1: as designed)
+  double studioLightSpread, studioFloorOffset, studioShadowStrength;
+  // the largest half-size of the floor, relative to the model
+  double studioFloorSize;
+  int studioSamples;
+  int phlogiston;
+  // order independent (weighted blended) transparency instead of back to
+  // front sorting
+  int orderIndependentTransparency;
   // polygon offset options
   int polygonOffset, polygonOffsetAlways;
   double polygonOffsetFactor, polygonOffsetUnits;
@@ -309,13 +441,18 @@ public:
   int colorScheme;
   // number of subdivisions for gluQuadrics
   int quadricSubdivisions;
+  // memory (in MB) each of the caches kept between frames may take, the
+  // glyph triangles and the string atlas (0: automatic, see
+  // graphicsCacheMB())
+  double graphicsCacheSize;
   // vector display type and options (for normals, etc.)
   int vectorType;
   double arrowRelHeadRadius, arrowRelStemRadius, arrowRelStemLength;
   // dynamic variable tracking if the bbox is currently imposed
   int forcedBBox;
-  // enable selection/hover/picking using the mouse
-  int mouseSelection, mouseHoverMeshes, pickElements;
+  // enable selection/hover using the mouse; pickElements asks a pick to
+  // return the mesh element under the point it hit, instead of the entity
+  int mouseSelection, mouseHoverMeshes, mouseHoverHighlight, pickElements;
   // invert sense of mouse wheel zoom
   int mouseInvertZoom;
   // disable some warnings for expert users?
@@ -339,7 +476,7 @@ public:
     int smooth, animCycle, animStep;
     int combineTime, combineRemoveOrig, combineCopyOptions;
     int fileFormat, plugins, forceNodeData, forceElementData;
-    int saveMesh, saveInterpolationMatrices;
+    int saveMesh, saveInterpolationMatrices, saveAdapted;
     double animDelay;
     std::string doubleClickedGraphPointCommand;
     double doubleClickedGraphPointX, doubleClickedGraphPointY;
@@ -367,7 +504,7 @@ public:
     int gifDither, gifSort, gifInterlace, gifTransparent;
     int posElementary, posElement, posGamma, posEta, posSICN, posSIGE, posDisto;
     int compositeWindows, deleteTmpFiles, background;
-    int width, height;
+    int width, height, supersampling, scalePixelSizes;
     double parameter, parameterFirst, parameterLast, parameterSteps;
     int pgfTwoDim, pgfExportAxis, pgfHorizBar;
     std::string parameterCommand;
@@ -378,6 +515,8 @@ public:
   // color options
   struct {
     unsigned int bg, bgGrad, fg, text, axes, smallAxes;
+    // the box a query leaves on the picture (see drawQuery.cpp)
+    unsigned int query;
     unsigned int ambientLight[6], diffuseLight[6], specularLight[6];
     struct {
       unsigned int point, curve, surface, volume;
@@ -387,6 +526,7 @@ public:
     struct {
       unsigned int node, nodeSup, line, triangle, quadrangle;
       unsigned int tetrahedron, hexahedron, prism, pyramid, trihedron;
+      unsigned int polygon, polyhedron;
       unsigned int carousel[20];
       unsigned int tangents, normals;
     } mesh;
@@ -394,7 +534,9 @@ public:
   // is the machine big-endian?
   int bigEndian;
   // how RGBA values are packed and unpacked into/from an unsigned integer to be
-  // fed to glColor4ubv (depends on machine byte ordering!):
+  // fed to gmshColor4ubv (depends on machine byte ordering!):
+  // the bound set by General.GraphicsCacheSize, or derived from the machine
+  double graphicsCacheMB();
   unsigned int packColor(int R, int G, int B, int A);
   int unpackRed(unsigned int X);
   int unpackGreen(unsigned int X);

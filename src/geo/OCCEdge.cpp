@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -16,7 +16,6 @@
 
 #include <Standard_Version.hxx>
 #include <TopoDS.hxx>
-#include <Geom2dLProp_CLProps2d.hxx>
 #include <Geom_BezierCurve.hxx>
 #include <Geom_OffsetCurve.hxx>
 #include <Geom_Ellipse.hxx>
@@ -34,6 +33,12 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRep_Builder.hxx>
 #include <BOPTools_AlgoTools.hxx>
+
+#if OCC_VERSION_HEX < 0x080000
+#include <Geom2dLProp_CLProps2d.hxx>
+#else
+#include <GeomLProp.hxx>
+#endif
 
 OCCEdge::OCCEdge(GModel *m, TopoDS_Edge c, int num, GVertex *v1, GVertex *v2)
   : GEdge(m, num, v1, v2), _c(c), _trimmed(nullptr)
@@ -97,7 +102,9 @@ SBoundingBox3d OCCEdge::bounds(bool fast)
 
   Bnd_Box b;
   try {
-    BRepBndLib::Add(_c, b);
+    // not from a triangulation the shape may carry (e.g. made to draw it):
+    // the box would change once the shape has been drawn
+    BRepBndLib::Add(_c, b, false);
   } catch(Standard_Failure &err) {
     Msg::Error("OpenCASCADE exception %s", err.GetMessageString());
     return SBoundingBox3d();
@@ -244,8 +251,10 @@ GPoint OCCEdge::closestPoint(const SPoint3 &qp, double &param) const
   if(CTX::instance()->geom.occUseGenericClosestPoint)
     return GEdge::closestPoint(qp, param);
   double u, xyz[3];
-  if(_project(qp.data(), u, xyz))
+  if(_project(qp.data(), u, xyz)) {
+    param = u;
     return GPoint(xyz[0], xyz[1], xyz[2], this, u);
+  }
   else
     return GEdge::closestPoint(qp, param);
 }
@@ -267,7 +276,7 @@ bool OCCEdge::containsPoint(const SPoint3 &pt) const
   double u;
   SPoint3 xyz;
   if(_project(pt.data(), u, xyz.data())) {
-    const Standard_Real tolerance = BRep_Tool::Tolerance(_c);
+    const double tolerance = BRep_Tool::Tolerance(_c);
     if(pt.distance(xyz) <= tolerance) return true;
   }
   return false;
@@ -412,9 +421,13 @@ double OCCEdge::curvature(double par) const
 
   if(degenerate(0)) return eps;
 
-  Standard_Real Crv;
+  double Crv;
   if(_curve.IsNull()) {
+#if OCC_VERSION_HEX < 0x080000
     Geom2dLProp_CLProps2d aCLProps(_curve2d, 2, eps);
+#else
+    GeomLProp_CLProps2d aCLProps(_curve2d, 2, eps);
+#endif
     aCLProps.SetParameter(par);
     if(!aCLProps.IsTangentDefined())
       Crv = eps;

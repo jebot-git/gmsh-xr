@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -108,6 +108,10 @@ public:
   virtual ~Field();
   bool isDeprecated() { return _deprecated; }
   virtual void update() {}
+  // update() for an evaluation outside a meshing pass (the API, the GUI):
+  // within a pass FieldManager::initialize() has called it on every field,
+  // serially, so that the evaluations only read
+  void ensureUpdated();
   int id;
   std::map<std::string, FieldOption *> options;
   std::map<std::string, FieldCallback *> callbacks;

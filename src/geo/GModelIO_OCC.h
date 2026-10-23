@@ -1,4 +1,4 @@
-// Gmsh - Copyright (C) 1997-2025 C. Geuzaine, J.-F. Remacle
+// Gmsh - Copyright (C) 1997-2026 C. Geuzaine, J.-F. Remacle
 //
 // See the LICENSE.txt file in the Gmsh root directory for license information.
 // Please report all issues on https://gitlab.onelab.info/gmsh/gmsh/issues.
@@ -24,9 +24,9 @@ class ExtrudeParams;
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
 #include <TopoDS_Compound.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
-#include <TopTools_DataMapOfShapeInteger.hxx>
-#include <TopTools_DataMapOfIntegerShape.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <NCollection_DataMap.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
 
 class BRepSweep_Prism;
 class BRepSweep_Revol;
@@ -47,16 +47,21 @@ private:
 
   // all the (sub)shapes, updated dynamically when shapes need to be imported
   // into a GModel
-  TopTools_IndexedMapOfShape _vmap, _emap, _wmap, _fmap, _shmap, _somap;
+  NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>
+    _vmap, _emap, _wmap, _fmap, _shmap, _somap;
 
   // cache mapping TopoDS_Shapes to their corresponding (future) GEntity tags
-  TopTools_DataMapOfShapeInteger _vertexTag, _edgeTag, _faceTag, _solidTag;
-  TopTools_DataMapOfIntegerShape _tagVertex, _tagEdge, _tagFace, _tagSolid;
+  NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher>
+    _vertexTag, _edgeTag, _faceTag, _solidTag;
+  NCollection_DataMap<int, TopoDS_Shape>
+    _tagVertex, _tagEdge, _tagFace, _tagSolid;
 
   // cache mapping TopoDS_Shapes to tags for internal use during geometry
   // construction
-  TopTools_DataMapOfShapeInteger _wireTag, _shellTag;
-  TopTools_DataMapOfIntegerShape _tagWire, _tagShell;
+  NCollection_DataMap<TopoDS_Shape, int, TopTools_ShapeMapHasher>
+    _wireTag, _shellTag;
+  NCollection_DataMap<int, TopoDS_Shape>
+    _tagWire, _tagShell;
 
   // cache of <dim,tag> pairs corresponding to entities that will need to be
   // removed from the model at the next synchronization
@@ -398,6 +403,15 @@ public:
   // import shapes from TopoDS_Shape
   bool importShapes(const TopoDS_Shape *shape, bool highestDimOnly,
                     std::vector<std::pair<int, int> > &outDimTags);
+
+  // bind shapes to explicit tags, e.g. to restore the entity tags stored in a
+  // file before importing the corresponding shape with importShapes(). The
+  // shapes are bound in increasing dimension, so that sub-shapes that are
+  // explicitly listed keep their tag. Nothing is bound and false is returned if
+  // one of the tags is already used by another shape, or if the type of one of
+  // the shapes does not match its dimension.
+  bool
+  bindShapes(const std::map<std::pair<int, int>, TopoDS_Shape> &dimTagShape);
 
   // apply various healing algorithms to try to fix the shapes
   bool healShapes(const std::vector<std::pair<int, int> > &inDimTags,
