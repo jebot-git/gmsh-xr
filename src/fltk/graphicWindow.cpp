@@ -4195,7 +4195,11 @@ graphicWindow::graphicWindow(bool main, int numTiles, bool detachedMenu)
     }
     else {
 #endif
+#if defined(HAVE_DOME_XR)
+      _bar = domeDesktop::createMenuBar(0, 0, width, BH);
+#else
       _bar = new Fl_Menu_Bar(0, 0, width, BH);
+#endif
       _bar->menu(bar_table);
       _bar->global();
 #if defined(HAVE_DOME_XR)
@@ -4399,6 +4403,18 @@ graphicWindow::graphicWindow(bool main, int numTiles, bool detachedMenu)
                    CTX::instance()->glPosition[1]);
   }
   _win->end();
+
+#if defined(HAVE_DOME_XR)
+  if(_bar) domeDesktop::menuLayout(*_bar, [this, resbox](int reclaimed) {
+    _tile->resize(_tile->x(), _tile->y() - reclaimed,
+                  _tile->w(), _tile->h() + reclaimed);
+    resbox->resize(resbox->x(), resbox->y() - reclaimed,
+                   resbox->w(), resbox->h() + reclaimed);
+    _win->init_sizes();
+    if(getenv("DE_XR_APPEARANCE_TRACE"))
+      fprintf(stderr, "DX_MENU_LAYOUT top=%d height=%d\n", _tile->y(), _tile->h());
+  });
+#endif
 
   if(main && detachedMenu) {
     _menuwin =

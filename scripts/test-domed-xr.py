@@ -196,6 +196,9 @@ def main():
             check([child.value[1]['label'].value.replace('_','') for child in model[2]] == ['File','Tools','Window','Help']
                   and find(xrmodel, 'DomeD XR Mesh') is not None,
                   'Desktop and XR surfaces export the real Gmsh menu tree')
+            wait(lambda: 'DX_UNIVERSAL_MENU external=1 height=0' in (out/'wayland-gmsh.log').read_text())
+            check('DX_MENU_LAYOUT top=0' in (out/'wayland-gmsh.log').read_text(),
+                  'DomeD collapses the duplicate local menu and reclaims its row')
             check([[key.lower() for key in chord] for chord in find(model, 'DomeD XR Mesh')[1]['shortcut'].value] == [['control','shift','x']],
                   'Universal menu exports the native shortcut metadata')
             check(find(model, 'Open Recent') is not None and 'box.msh' in str(model),
@@ -289,7 +292,9 @@ def main():
             # Verify both palette and font change live in the actual native GUI.
             def ui_pixel():
                 image = frame(desktop['id']).convert('RGB')
-                return image.getpixel((image.width-10, 10))
+                # With the menu collapsed the top right belongs to the scientific
+                # viewport, whose model background deliberately keeps its own colors.
+                return image.getpixel((image.width-10, image.height-10))
             dark = wait(ui_pixel)
             appearance.write_text(json.dumps({'light': True, 'accent': '#bb3377',
                 'font': 'Fusion Pixel 12px Mono latin / Sans-Serif', 'font_size': 12}))
@@ -342,6 +347,9 @@ def main():
             connection.sync()
             wait(lambda: stereo_window() is None)
             check(gui.poll() is None and bool(scene()['windows']), 'Escape closes only the XR view and keeps Gmsh alive')
+            visibility = re.findall(r'DX_UNIVERSAL_MENU external=(\d)', (out/'wayland-gmsh.log').read_text())
+            check(visibility and visibility[-1] == '1',
+                  'Closing the shared XR export keeps the desktop local menu collapsed')
             connection.close()
             stopped.set()
             thread.join(timeout=2)

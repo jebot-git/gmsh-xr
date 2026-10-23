@@ -54,7 +54,10 @@ Both the desktop GUI and XR mesh surface export the same live native menu tree
 to DomeD's universal menu over DBusMenu and the Wayland appmenu protocol. Recent
 files, enabled states, accelerators and callbacks come from Gmsh's own menu.
 DomeD supplies its standard missing categories and window actions. The in-window
-menu remains available on other desktops.
+bar collapses and its space is reclaimed while DomeD's universal-menu host and
+window association are available. Native shortcuts stay active. The bar returns
+if the host disappears, and remains available on other desktops. Desktop and XR
+surfaces share this state, so closing the XR view cannot restore a duplicate bar.
 
 Inside DomeD, the UI follows live light/dark, accent and bitmap font/strike
 settings from `dome/appearance.json`, including dialogs, text and model-tree
@@ -85,6 +88,7 @@ DomeD, start a new DomeD session; installations do not restart an active desktop
 ```sh
 ctest --test-dir build-domed -R '^dome-stereo$' --output-on-failure
 uv run --with pillow --with python-xlib --with dbus-next python scripts/test-domed-xr.py
+uv run --with pillow --with python-xlib --with dbus-next python scripts/test-domed-menu.py
 ```
 
 The integration test uses private Xvfb/D-Bus/DomeD instances and a simulated XR

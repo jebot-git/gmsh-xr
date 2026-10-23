@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "desktop-menu.h"
+#include "appearance.h"
 #include "appmenu-client.h"
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
@@ -57,6 +58,10 @@ struct DesktopMenu::Impl {
   GDBusConnection *bus = nullptr;
   GDBusNodeInfo *info = nullptr;
   guint registration = 0;
+  guint registrarWatch = 0;
+  bool registrarAvailable = false;
+  bool universal = false;
+  std::function<void()> availabilityChanged;
   uint32_t revision = 1;
   std::string path, signature;
   const Fl_Menu_Item *menuStorage = nullptr;
@@ -68,7 +73,8 @@ struct DesktopMenu::Impl {
   wl_surface *attachedSurface = nullptr;
   unsigned long attachedXid = 0;
   int nextId = 1;
-  Impl(Fl_Window &w, Fl_Menu_Bar &m) : window(w), menu(m) {
+  Impl(Fl_Window &w, Fl_Menu_Bar &m, std::function<void()> changed)
+      : window(w), menu(m), availabilityChanged(std::move(changed)) {
     static int count = 0;
     path = "/org/de_xr/FLTK/Menu" + std::to_string(++count);
     GError *error = nullptr;
@@ -83,11 +89,24 @@ struct DesktopMenu::Impl {
     registration = g_dbus_connection_register_object(
         bus, path.c_str(), info->interfaces[0], &vtable, this, nullptr,
         nullptr);
+    registrarWatch = g_bus_watch_name_on_connection(
+        bus, "com.canonical.AppMenu.Registrar", G_BUS_NAME_WATCHER_FLAGS_NONE,
+        [](GDBusConnection *, const gchar *, const gchar *, gpointer data) {
+          auto self = static_cast<Impl *>(data);
+          self->registrarAvailable = true;
+          self->updateVisibility();
+        },
+        [](GDBusConnection *, const gchar *, gpointer data) {
+          auto self = static_cast<Impl *>(data);
+          self->registrarAvailable = false;
+          self->updateVisibility();
+        }, this, nullptr);
     rebuild();
     Fl::add_timeout(.05, tick, this);
   }
   ~Impl() {
     Fl::remove_timeout(tick, this);
+    if (registrarWatch) g_bus_unwatch_name(registrarWatch);
     if (surface)
       org_kde_kwin_appmenu_release(surface);
     if (manager) {
@@ -111,8 +130,15 @@ struct DesktopMenu::Impl {
     for (int n = 0; n < 16 && g_main_context_pending(nullptr); ++n)
       g_main_context_iteration(nullptr, FALSE);
     self->attach();
+    self->updateVisibility();
     self->rebuild();
     Fl::repeat_timeout(.1, tick, p);
+  }
+  void updateVisibility() {
+    bool available = dx::dome() && registrarAvailable && registration && attached;
+    if (available == universal) return;
+    universal = available;
+    if (availabilityChanged) availabilityChanged();
   }
   void attach() {
     if (!window.shown()) {
@@ -435,11 +461,12 @@ struct DesktopMenu::Impl {
           "Unknown menu method");
   }
 };
-DesktopMenu::DesktopMenu(Fl_Window &w, Fl_Menu_Bar &m)
-    : impl(std::make_unique<Impl>(w, m)) {}
+DesktopMenu::DesktopMenu(Fl_Window &w, Fl_Menu_Bar &m, std::function<void()> changed)
+    : impl(std::make_unique<Impl>(w, m, std::move(changed))) {}
 DesktopMenu::~DesktopMenu() = default;
 
 std::string DesktopMenu::objectPath() const { return impl->path; }
+bool DesktopMenu::universalAvailable() const { return impl->universal; }
 std::string DesktopMenu::serviceName() const {
   auto service =
       impl->bus ? g_dbus_connection_get_unique_name(impl->bus) : nullptr;
